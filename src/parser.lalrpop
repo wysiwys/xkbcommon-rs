@@ -1,0 +1,714 @@
+use crate::lexer::Token;
+
+use std::sync::{Arc, Mutex};
+use crate::context::Context;
+use crate::atom::Atom;
+use crate::parser_utils::*;
+use crate::errors::*;
+
+
+use crate::xkbcomp::{
+	xkbcomp::*,
+	ast::*,
+};
+
+use xkeysym::Keysym;
+use crate::rust_xkbcommon::Keycode;
+
+
+grammar(param: &mut ParserParam<'_>);
+
+
+#[inline]
+Comma<T>: Vec<T> = {
+	<mut v:(<T> ",")*> <e:T?> => match e{
+		None => v,
+		Some(e) => { v.push(e); v }
+	}
+}
+
+#[inline]
+CommaPlus<T>: Vec<T> = {
+	<mut v:(<T> ",")*> <item:T> => {
+		v.push(item); v
+	}
+}
+	
+
+pub XkbFiles: Vec<Result<XkbFile, KeymapErr>> = {
+	<files:XkbFile+> => files
+
+}
+pub XkbFile: Result<XkbFile,KeymapErr> = {
+	<map:XkbCompositeMap> => {
+		//param.more_maps = map.is_ok();
+		//param.rtrn = map?; 
+		map},
+	<map:XkbMapConfig> => {
+		//param.more_maps = map.is_ok();
+		//param.rtrn = map?; 
+		map
+		//TODO: YYACCEPT
+		 },
+}
+
+XkbCompositeMap: Result<XkbFile,KeymapErr> = {
+	<flags:OptFlags> <file_type:XkbCompositeType>
+	<name:OptMapName> "OBRACE" <l:XkbMapConfigList>
+	"CBRACE" ";"
+	=> XkbFile::create(
+		file_type, name, Some(l?), None, flags)
+}
+
+XkbCompositeType: XkbFileType = {
+	"XKB_KEYMAP" => XkbFileType::Keymap,
+	"XKB_SEMANTICS" => XkbFileType::Keymap,
+	"XKB_LAYOUT" => XkbFileType::Keymap,
+}
+
+XkbMapConfigList: Result<Vec<XkbFile>,KeymapErr> = {
+	<l:XkbMapConfig+>  => l.into_iter().collect()
+}
+
+XkbMapConfig: Result<XkbFile,KeymapErr> = {
+	<opt_flags:OptFlags>
+	<file_type:FileType>
+	<map_name:OptMapName> "OBRACE"
+	<decls:DeclList>
+	 "CBRACE" ";"
+	=> {
+	
+	
+		XkbFile::create(
+		file_type, 
+		map_name,
+		None,
+		Some(decls?),
+		opt_flags)
+		}
+}
+
+FileType: XkbFileType = {
+	"XKB_KEYCODES" => XkbFileType::Keycodes,
+	"XKB_TYPES" => XkbFileType::Types,
+	"XKB_COMPATMAP" => XkbFileType::Compat,
+	"XKB_SYMBOLS" => XkbFileType::Symbols,
+	"XKB_GEOMETRY" => XkbFileType::Geometry
+}
+
+OptFlags: XkbMapFlags = {
+	<f:Flags> => f,
+	=> XkbMapFlags::empty()
+}
+
+Flags: XkbMapFlags = {
+	<flags:Flag*> <n:Flag> => {
+		flags.into_iter().fold(n,
+			|acc, e| acc.union(e))
+	}
+}
+
+Flag: XkbMapFlags = {
+	"PARTIAL" => XkbMapFlags::MAP_IS_PARTIAL,
+	"DEFAULT" => XkbMapFlags::MAP_IS_DEFAULT,
+	"HIDDEN" => XkbMapFlags::MAP_IS_HIDDEN,
+	"ALPHANUMERIC_KEYS" 
+		=> XkbMapFlags::MAP_HAS_ALPHANUMERIC,
+	"MODIFIER_KEYS" => XkbMapFlags::MAP_HAS_MODIFIER,
+	"KEYPAD_KEYS" => XkbMapFlags::MAP_HAS_KEYPAD,
+	"FUNCTION_KEYS" => XkbMapFlags::MAP_HAS_FN,
+	"ALTERNATE_GROUP" => XkbMapFlags::MAP_IS_ALTGR,
+	}
+
+
+DeclList: Result<Vec<Decl>, KeymapErr> = {
+
+	<decl_list: Decl*> => {	
+		let mut decls: Vec<Decl> = vec![];
+		for d in decl_list {
+			let mut decl: Vec<Decl> = d?;
+			decls.append(&mut decl);
+			}
+		Ok(decls)
+		}
+
+}
+
+Decl: Result<Vec<Decl>,KeymapErr> = {
+	#[precedence(level="0")]
+	<m: MergeMode> <s:"STRING"> => {
+		let stmt = IncludeStmt::create(
+			&mut param.ctx, &s, m)?;
+		Ok(vec![Decl::Include(stmt)])	
+	},
+	#[precedence(level="1")] #[assoc(side="right")]
+	<m: OptMergeMode> <d:SymbolsDecl>
+	=> { let mut d = d?; d.merge = m;
+		Ok(vec![Decl::Symbols(d)]) },
+	<m:OptMergeMode> <d:VarDecl>
+	=> { let mut d = d?; d.merge = m; 
+		Ok(vec![Decl::Var(d)]) },
+	<m:OptMergeMode> <d:InterpretDecl>
+	=> { 
+		let mut d = d?; d.merge = m;
+		Ok(vec![Decl::Interp(d)])  },
+	<m: OptMergeMode> <d:KeyNameDecl>
+	=> { let mut d = d?; d.merge = m;
+		Ok(vec![Decl::KeyName(d)]) },
+	<m: OptMergeMode> <d:KeyAliasDecl>
+	=> { let mut d = d?; d.merge = m;
+		Ok(vec![Decl::KeyAlias(d)]) },
+	<m: OptMergeMode> <d:KeyTypeDecl>
+	=> { let mut d = d?; d.merge = m;
+		Ok(vec![Decl::KeyType(d)]) },
+	<m: OptMergeMode> <d:ModMapDecl>
+	=> { let mut d = d?; d.merge = m;
+		Ok(vec![Decl::ModMap(d)]) },
+	<m: OptMergeMode> <d:GroupCompatDecl>
+	=> { let mut d = d?; d.merge = m;
+		Ok(vec![Decl::GroupCompat(d)]) },
+	<m: OptMergeMode> <d:LedMapDecl>
+	=> { let mut d = d?; d.merge = m;
+		Ok(vec![Decl::LedMap(d)]) },
+	<m: OptMergeMode> <d:LedNameDecl>
+	=> { let mut d = d?; d.merge = m;
+		Ok(vec![Decl::LedName(d)]) },
+	<m:OptMergeMode> <vmod_list:VModDecl> => {
+		
+		let mut v = vmod_list?;
+		let list = v.into_iter().map(|mut vmod| {
+			vmod.merge = m;
+			Decl::VMod(vmod)
+		}).collect();
+		Ok(list)
+	},
+	#[precedence(level="2")]
+	<m:OptMergeMode> ShapeDecl => Ok(vec![]),
+	<m:OptMergeMode> SectionDecl => Ok(vec![]),
+	<m:OptMergeMode> DoodadDecl => Ok(vec![]),
+
+
+
+}
+
+
+
+VarDecl: Result<VarDef,KeymapErr> = {
+	#[precedence(level="0")]
+	<i:Ident> ";"
+		=> VarDef::create_bool(i,true),
+	"!" <i:Ident> ";"
+		=> VarDef::create_bool(i,false),
+	#[precedence(level="1")] #[assoc(side="none")]
+	<lhs:Lhs> "=" <e:Expr> ";"
+		=> VarDef::create(Some(lhs?),e?),
+}
+
+KeyNameDecl: Result<KeycodeDef,KeymapErr> = {
+	<k:KeyName> "=" <c:KeyCode> ";"
+	=> KeycodeDef::create(k,c.raw().into())
+}
+
+KeyAliasDecl: Result<KeyAliasDef,KeymapErr> = {
+	"ALIAS" <a:KeyName> "=" <b:KeyName> ";"
+	=> KeyAliasDef::create(a,b)
+	}
+
+
+VModDecl: Result<Vec<VModDef>,KeymapErr> = {
+	"VIRTUAL_MODS" <l:VModDefList> ";" => l
+	}
+
+VModDefList: Result<Vec<VModDef>,KeymapErr> = {
+	<l: CommaPlus<VModDef>> 
+		=> l.into_iter().collect()	
+}
+
+VModDef: Result<VModDef,KeymapErr> = {
+	#[precedence(level="0")]
+	<i: Ident> => VModDef::create(i,None),
+	#[precedence(level="1")] #[assoc(side="right")]
+	<i: Ident> "=" <e:Expr> => VModDef::create(i,Some(e?))
+
+}
+
+InterpretDecl: Result<InterpDef,KeymapErr> = {
+	"INTERPRET" <m:InterpretMatch> "OBRACE" <l:VarDeclList> "CBRACE" ";"
+	=> {	let mut m = m?;
+		m.set_def(l?); Ok(m)
+	}
+
+
+}
+
+
+InterpretMatch: Result<InterpDef,KeymapErr> = {
+	#[precedence(level="0")]
+	<k:Keysym> => 
+		InterpDef::create(k,None),
+	#[precedence(level="1")] #[assoc(side="left")]
+	<k:Keysym> "+" <e:Expr> => 
+		InterpDef::create(k,Some(e?))
+}
+
+VarDeclList: Result<Vec<VarDef>,KeymapErr> = {
+	<v:VarDecl+> => v.into_iter().collect()
+} 
+
+
+KeyTypeDecl: Result<KeyTypeDef,KeymapErr> = {
+	"TYPE" <s:String> "OBRACE"
+	<v:VarDeclList> "CBRACE" ";"
+		=> KeyTypeDef::create(s,v?)
+}
+
+SymbolsDecl: Result<SymbolsDef,KeymapErr> = {
+	"KEY" <keyname:KeyName>
+	"OBRACE" <s:SymbolsBody> "CBRACE" ";"
+	=> SymbolsDef::create(keyname,s?)
+}
+
+SymbolsBody: Result<Vec<VarDef>,KeymapErr> = {
+	<s:CommaPlus<SymbolsVarDecl>> => s.into_iter().collect()
+
+}
+
+
+SymbolsVarDecl: Result<VarDef,KeymapErr> = {
+	#[precedence(level="0")]
+	<ident:Ident>
+		=> VarDef::create_bool(ident,true),
+	"!" <ident:Ident>
+		=> VarDef::create_bool(ident,false),
+	#[precedence(level="1")] #[assoc(side="none")]
+	<lhs:Lhs> "=" <e:Expr> 
+		=> VarDef::create(Some(lhs?),e?),
+	#[precedence(level="2")] #[assoc(side="none")]
+	<a:ArrayInit> => VarDef::create(None,a?),
+	#[precedence(level="3")] #[assoc(side="right")]
+	<lhs:Lhs> "=" <a:ArrayInit>
+		=> VarDef::create(Some(lhs?),a?),
+}
+
+ArrayInit: Result<ExprDef, KeymapErr> = {
+	#[precedence(level="0")]
+	"[" <l:ActionList> "]" => {ExprActionList::create(l?) },
+	#[precedence(level="1")] #[assoc(side="right")]
+	"[" <l:KeysymList> "]" => Ok(ExprDef::KeysymList(l)),
+}
+
+GroupCompatDecl: Result<GroupCompatDef,KeymapErr> = {
+	"GROUP" <i:Integer> "=" <e:Expr> ";"
+	=> GroupCompatDef::create(i.try_into().unwrap(),e?)
+}
+
+ModMapDecl: Result<ModMapDef,KeymapErr> = {
+	"MODIFIER_MAP" <i:Ident>
+	"OBRACE" <l:ExprList> "CBRACE" ";"
+	=> {
+	ModMapDef::create(i,l?)
+
+	}
+}
+
+LedMapDecl: Result<LedMapDef, KeymapErr> = {
+	"INDICATOR" <s:String> 
+	"OBRACE" <l:VarDeclList> "CBRACE" ";"
+		=> {
+		LedMapDef::create(s,l?)
+	}
+}
+
+LedNameDecl: Result<LedNameDef,KeymapErr> = {
+	"INDICATOR" <i:Integer> "=" <e:Expr> ";"
+	=> LedNameDef::create(i.try_into().unwrap(),e?,false),
+	"VIRTUAL" "INDICATOR" <i:Integer> "=" <e:Expr> ";"
+	=> LedNameDef::create(i.try_into().unwrap(),e?,true)
+}
+
+ShapeDecl: () = {
+	"SHAPE" String "OBRACE" OutlineList "CBRACE" ";" => (),
+	"SHAPE" String "OBRACE" CoordList "CBRACE" ";" => ()
+}
+
+SectionDecl: () = {
+	"SECTION" String "OBRACE" SectionBody "CBRACE" ";" => ()
+}
+
+SectionBody = <SectionBodyItem+>;
+
+SectionBodyItem:() = {
+	"ROW" "OBRACE" RowBody "CBRACE" ";" => (),
+	VarDecl => (),
+	DoodadDecl => (),
+	LedMapDecl => (),
+	OverlayDecl => ()
+}
+
+RowBody = <RowBodyItem+>;
+
+RowBodyItem: () = {
+	"KEYS" "OBRACE" Keys "CBRACE" ";" => (),
+	VarDecl => ()
+}
+
+Keys = CommaPlus<Key>;
+
+Key: () = {
+	"KEYNAME" => (),
+	"OBRACE" ExprList "CBRACE" => ()
+}
+
+OverlayDecl: () = {
+	"OVERLAY" String "OBRACE" OverlayKeyList "CBRACE" ";" => ()
+}
+
+OverlayKeyList = CommaPlus<OverlayKey>;
+
+OverlayKey: () = {
+
+	"KEYNAME" "=" "KEYNAME" => ()
+
+}
+OutlineList = CommaPlus<OutlineInList>;
+
+OutlineInList: () = {
+	#[precedence(level="0")]
+	"OBRACE" CoordList "CBRACE" => (),
+	#[precedence(level="1")] #[assoc(side="right")]
+	Ident "=" "OBRACE" CoordList "CBRACE" => (),
+	Ident "=" Expr => () 
+}
+
+CoordList = CommaPlus<Coord>;
+
+Coord: () = {
+	"[" SignedNumber "," SignedNumber "]" => () 
+}
+
+DoodadDecl: () = {
+	DoodadType String "OBRACE" VarDeclList "CBRACE" ";" => ()
+}
+
+DoodadType: () = {
+	"TEXT" => (),
+	"OUTLINE" => (),
+	"SOLID" => (),
+	"LOGO" => (),
+}
+		
+
+FieldSpec: Atom = {
+	<i: Ident> => i,
+	<e: Element> => e
+	}
+
+Element: Atom = {
+	<t:"ACTION_TOK"> => param.atom_intern("action".to_owned()),
+	<t:"INTERPRET"> => param.atom_intern("interpret".to_owned()),
+	<t:"TYPE"> => param.atom_intern("type".to_owned()),
+	<t:"KEY"> => param.atom_intern("key".to_owned()),
+	<t:"GROUP"> => param.atom_intern("group".to_owned()),
+	<t:"MODIFIER_MAP"> 
+		=> param.atom_intern("modifier_map".to_owned()),
+	<t:"INDICATOR"> => param.atom_intern("indicator".to_owned()),
+	<t:"SHAPE"> => param.atom_intern("shape".to_owned()),
+	<t:"ROW"> => param.atom_intern("row".to_owned()),
+	<t:"SECTION"> => param.atom_intern("section".to_owned()),
+	<t:"TEXT"> => param.atom_intern("text".to_owned()),
+}
+
+OptMergeMode: MergeMode = {
+	<m:MergeMode> => m,
+	=> MergeMode::Default
+}
+
+MergeMode: MergeMode = {
+	"INCLUDE" => MergeMode::Default,
+	"AUGMENT" => MergeMode::Augment,
+	"OVERRIDE" => MergeMode::Override,
+	"REPLACE" => MergeMode::Replace,
+	"ALTERNATE" => MergeMode::Default // no longer supported
+}
+
+ExprList: Result<Vec<ExprDef>,KeymapErr> = {
+	<l: Comma<Expr>> => l.into_iter().collect() 
+
+}
+
+// TODO: not sure about precedence
+
+Expr: Result<ExprDef,KeymapErr> = {
+	#[precedence(level="0")]
+	<t:Term> => t,
+	#[precedence(level="1")] #[assoc(side="left")]
+	<a:Expr> "/" <b:Expr> 
+		=> ExprBinary::create(ExprOpType::Divide,a?,b?),
+	#[precedence(level="2")] #[assoc(side="left")]
+	<a:Expr> "*" <b:Expr>
+		=> ExprBinary::create(ExprOpType::Multiply,a?,b?),
+	#[precedence(level="3")] #[assoc(side="left")]
+	<a:Expr> "+" <b:Expr>
+		=> ExprBinary::create(ExprOpType::Add,a?,b?),
+	#[precedence(level="4")] #[assoc(side="left")]
+	<a:Expr> "-" <b:Expr>
+		=> ExprBinary::create(ExprOpType::Subtract,a?,b?),
+	#[precedence(level="5")] #[assoc(side="right")]
+	<a:Lhs> "=" <b:Expr>
+		=> ExprBinary::create(ExprOpType::Assign,a?,b?),
+
+}
+
+Term: Result<ExprDef,KeymapErr> = {
+	#[precedence(level="0")]
+	<t:Terminal> => t,
+	
+	#[precedence(level="2")] #[assoc(side="right")]
+	"-" <t:Term> 
+	=> {	
+		let t = t?;
+		ExprUnary::create(
+		ExprOpType::Negate,t.value_type(),t)
+	},
+	"+" <t:Term> 
+	=> {	
+		let t = t?;
+		ExprUnary::create(
+		ExprOpType::UnaryPlus,t.value_type(),t)
+	},
+	"!" <t:Term> 
+	=> {	
+		let t = t?;
+		ExprUnary::create(
+		ExprOpType::Not,t.value_type(),t)
+	},
+	"~" <t:Term> 
+	=> {	
+		let t = t?;
+		ExprUnary::create(
+		ExprOpType::Invert,t.value_type(),t)
+	},
+	<lhs:Lhs> => lhs,
+	<f:FieldSpec> "(" <l:ExprList> ")" 
+	=> ExprAction::create(f,l?),	
+	"(" <e:Expr> ")" => e
+
+}
+
+ActionList: Result<Vec<ExprDef>,KeymapErr> = {
+	<a: CommaPlus<Action>> => a.into_iter().collect()
+} 
+
+Action: Result<ExprDef,KeymapErr>= {
+
+	<f:FieldSpec> "(" <l:ExprList> ")"
+	=> {
+		ExprAction::create(f,l?)
+	}
+}
+
+Lhs: Result<ExprDef, KeymapErr> = {
+	#[precedence(level="0")]
+	<f:FieldSpec> => ExprIdent::create(f),
+
+	#[precedence(level="1")] #[assoc(side="right")]
+	<a:FieldSpec> "." <b:FieldSpec>
+		=> ExprFieldRef::create(a,b),
+	
+	#[precedence(level="2")] #[assoc(side="right")]
+	<a:FieldSpec> "[" <e:Expr> "]"
+		=> ExprArrayRef::create(None, a,e?),
+
+
+	#[precedence(level="3")] #[assoc(side="right")]
+	<a:FieldSpec> "." <b:FieldSpec> "[" <e:Expr> "]"
+	=> ExprArrayRef::create(Some(a),b,e?)	
+	}
+
+Terminal: Result<ExprDef,KeymapErr> = {
+	<s:String> => { ExprString::create(s) },
+	<i:Integer> => { ExprInteger::create(i.into()) },
+	<f: Float> => { ExprFloat::create(f) },
+	<k: KeyName> => { ExprKeyName::create(k) },
+}
+
+KeysymList: ExprKeysymList = {
+	#[precedence(level="0")]
+	<k: Keysym> => ExprKeysymList::create(k),
+	<s: Keysyms> => s,
+	#[precedence(level="1")] #[assoc(side="right")]
+	<mut e:KeysymList> "," <k: Keysym> => { e.append(k); e },
+	<mut e:KeysymList> "," <s: Keysyms> => { e.append_multi(s); e },
+}
+
+Keysyms: ExprKeysymList = {
+	"OBRACE" <e: CommaPlus<Keysym>> "CBRACE" => ExprKeysymList::create_multi(e)
+
+}
+
+Keysym: Option<Keysym> = {
+	#[precedence(level="0")]
+	<ident: "IDENT"> => {
+		let keysym = resolve_keysym(&ident);
+
+		// First pass to check if we can resolve the sym
+		// to `NO_SYMBOL` or to a proper keysym.
+		// If not, return None.
+
+		if keysym.is_none() { 
+			log::warn!("Unrecognized_keysym: {:?}", ident); 
+			}
+	
+		// Convert the NO_SYMBOL to None
+		match keysym { 
+			Some(xkeysym::NO_SYMBOL) => None,
+			ks => ks }
+	},
+	"SECTION" => Some(Keysym::section),
+	#[precedence(level="1")] #[assoc(side="all")]
+	<int: Integer> => {
+
+		use crate::keysyms::XKB_KEYSYM_MIN;
+		use crate::rust_xkbcommon::XKB_KEYSYM_MAX;
+
+		// TODO: number formatting in this function
+
+		if int < XKB_KEYSYM_MIN {
+			log::warn!("{:?}: Unrecognized keysym \"{}\"", 
+				XkbWarning::UnrecognizedKeysym, int); 
+			return None;
+		}
+
+		// Special case for digits 0..9
+		else if int < 10 { // XKB_KEY_0 .. XKB_KEY_9
+			return Some(Keysym::new((Keysym::_0).raw() + int));
+		}
+		else {
+
+			log::warn!("{:?}: numeric keysym \"{:?}\" ({:#x})",
+				XkbWarning::NumericKeysym, int, int);
+			if int <= XKB_KEYSYM_MAX {
+				return Some(Keysym::new(int));
+			}
+			else {
+				log::warn!("{:?}: Unrecognized keysym \"{:?}\"",
+					XkbWarning::UnrecognizedKeysym, int);
+				return None;
+
+			}
+
+		}
+
+	}	
+		
+}
+
+// Not implemented
+SignedNumber: () = {
+	"-" <n:Float> => (),
+	<n:Float> => (),
+	"-" <n:Integer> => (),
+	<n:Integer> => ()
+}
+
+Float: f64 = {
+	<f: "FLOAT"> => f
+}
+
+Integer: u32 = {
+	<int: "UINT"> => int
+}
+
+KeyCode: Keycode = {
+	<int: Integer> => Keycode::from(int)	
+}
+
+Ident: Atom = {
+	<ident: "IDENT"> => param.atom_intern(ident),
+	"DEFAULT" => param.atom_intern("default".to_owned()),
+}
+
+String: Atom = {
+	<string:"STRING"> => param.atom_intern(string)
+} 
+
+OptMapName: Option<String> = {
+	<name:MapName> => Some(name),
+	=> None
+}
+
+MapName: String = {
+	<name:"STRING"> => name
+}
+
+KeyName: Atom = {
+	<name:"KEYNAME"> => param.atom_intern(name)
+}
+
+
+extern {
+	enum Token {
+		"KEYNAME" => Token::Keyname(<String>),
+		"IDENT" => Token::Ident(<String>),
+		"STRING" => Token::String(<String>),
+		"UINT" => Token::UInt(<u32>),
+		"FLOAT" => Token::Float(<f64>),
+		"OBRACE" => Token::Obrace,
+		"CBRACE" => Token::Cbrace,
+		"," => Token::Comma,
+		";" => Token::Semi,
+		"=" => Token::Equals,
+		"[" => Token::Obracket,
+		"]" => Token::Cbracket,
+		"(" => Token::Oparen,
+		")" => Token::Cparen,
+		"." => Token::Dot,
+		"+" => Token::Plus,
+		"-" => Token::Minus,
+		"*" => Token::Times,
+		"/" => Token::Divide,
+		"!" => Token::Exclam,
+		"~" => Token::Invert,
+		"ACTION_TOK" => Token::ActionTok,
+		"ALIAS" => Token::Alias,
+		"ALPHANUMERIC_KEYS" => Token::AlphanumericKeys,
+		"ALTERNATE_GROUP" => Token::AlternateGroup,
+		"ALTERNATE" => Token::Alternate,
+		"AUGMENT" => Token::Augment,
+		"DEFAULT" => Token::Default,
+		"FUNCTION_KEYS" => Token::FunctionKeys,
+		"GROUP" => Token::Group,
+		"HIDDEN" => Token::Hidden,
+		"INCLUDE" => Token::Include,
+		"INDICATOR" => Token::Indicator,
+		"INTERPRET" => Token::Interpret,
+		"KEYPAD_KEYS" => Token::KeypadKeys,
+		"KEY" => Token::Key,
+		"KEYS" => Token::Keys,
+		"LOGO" => Token::Logo,
+		"MODIFIER_KEYS" => Token::ModifierKeys,
+		"MODIFIER_MAP" => Token::ModifierMap,
+		"OUTLINE" => Token::Outline,
+		"OVERLAY" => Token::Overlay,
+		"OVERRIDE" => Token::Override,
+		"PARTIAL" => Token::Partial,
+		"REPLACE" => Token::Replace,
+		"ROW" => Token::Row,
+		"SECTION" => Token::Section,
+		"SHAPE" => Token::Shape,
+		"SOLID" => Token::Solid,
+		"TEXT" => Token::Text,
+		"TYPE" => Token::Type,
+		"VIRTUAL_MODS" => Token::VirtualMods,
+		"VIRTUAL" => Token::Virtual,
+		"XKB_COMPATMAP" => Token::XkbCompatmap,
+		"XKB_GEOMETRY" => Token::XkbGeometry,
+		"XKB_KEYCODES" => Token::XkbKeycodes,
+		"XKB_KEYMAP" => Token::XkbKeymap,
+		"XKB_LAYOUT" => Token::XkbLayout,
+		"XKB_SEMANTICS" => Token::XkbSemantics,
+		"XKB_SYMBOLS" => Token::XkbSymbols,
+		"XKB_TYPES" => Token::XkbTypes,
+	}
+
+}
