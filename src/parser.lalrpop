@@ -39,7 +39,7 @@ pub XkbFiles: Vec<Result<XkbFile, KeymapErr>> = {
 	<files:XkbFile+> => files
 
 }
-pub XkbFile: Result<XkbFile,KeymapErr> = {
+XkbFile: Result<XkbFile,KeymapErr> = {
 	<map:XkbCompositeMap> => {
 		//param.more_maps = map.is_ok();
 		//param.rtrn = map?; 

@@ -4,19 +4,24 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = ["build_tools", "xkeysym"]
+members = ["codegen", "xkeysym"]
 
 [features]
 client = []
 server = []
 [profile.release]
+# for perf
+debug = 2
+debuginfo-level = 1
+
+
 # TODO: reconsider these options,
 # given performance considerations
-panic = 'abort'
+#panic = 'abort'
 #opt-level = 'z' # size optimization
 #lto = true # link time optimization
 #codegen-units = 1 # reduce codegen units
-strip = true # strip symbols from binary
+#strip = true # strip symbols from binary
 
 [dependencies]
 
@@ -49,7 +54,7 @@ simplelog = "0.12.2"
 [build-dependencies]
 #libc = "0.2.153"
 lalrpop = "0.20.0"
-xkb_rust_build_tools = { path = "build_tools" }
+xkb_rust_codegen = { path = "codegen" }
 
 [dev-dependencies]
 evdev = "0.12.1"

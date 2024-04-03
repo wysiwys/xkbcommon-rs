@@ -1,5 +1,5 @@
 [package]
-name = "xkb_rust_build_tools"
+name = "xkb_rust_codegen"
 version = "0.1.0"
 edition = "2021"
 

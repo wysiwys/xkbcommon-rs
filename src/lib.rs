@@ -81,7 +81,7 @@ pub use keymap::Keymap;
 /// and releases are the input, and key symbols (keysyms) are the output.
 pub use state::State;
 
-use rust_xkbcommon::RawKeycode;
+pub use rust_xkbcommon::RawKeycode;
 
 /// A wrapper struct for [RawKeycode].
 ///
@@ -252,6 +252,9 @@ pub use rust_xkbcommon::ConsumedMode;
 
 
 pub use rust_xkbcommon::KeymapFormat;
+
+
+pub use rust_xkbcommon::{CompileFlags, ContextFlags, KeyDirection};
 
 macro_rules! log_init {
 

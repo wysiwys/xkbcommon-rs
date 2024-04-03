@@ -1,7 +1,7 @@
 
 use std::path::Path;
 
-use xkb_rust_build_tools::*;
+use xkb_rust_codegen::*;
 
 fn main() {
 
