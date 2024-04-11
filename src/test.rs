@@ -12,10 +12,6 @@ mod rules_file_includes;
 mod rulescomp;
 mod stringcomp;
 
-
-
 // use all the functions in `common`
 #[cfg(test)]
-pub use common::*;
-
-
+pub(crate) use common::*;

@@ -1,4 +1,3 @@
-
 /* License of `rules-file-includes.c`:
  * --------------------------------------------------
  * Copyright © 2012 Ran Benita <ran234@gmail.com>
@@ -27,22 +26,14 @@
 
 use crate::log_init;
 use crate::test::*;
-use crate::rust_xkbcommon::*;
-
-
-use crate::context::Context;
-use crate::errors::*;
-use crate::keymap::Keymap;
 
 
 use std::env;
-use evdev::Key;
 
 use super::rules_file::*;
 
 #[test]
 fn test_rules_file_includes() {
-
     log_init!();
 
     env::set_var("XKB_CONFIG_ROOT", "./test/data");
@@ -61,11 +52,11 @@ fn test_rules_file_includes() {
         compat: "default_compat",
         symbols: "my_symbols",
 
-        should_fail: false
+        should_fail: false,
     };
 
     assert!(test_rules(&mut ctx, test1));
-    
+
     let test2 = TestData {
         rules: "inc-src-nested",
         model: "my_model",
@@ -78,7 +69,7 @@ fn test_rules_file_includes() {
         compat: "default_compat",
         symbols: "my_symbols",
 
-        should_fail: false
+        should_fail: false,
     };
     assert!(test_rules(&mut ctx, test2));
 
@@ -94,11 +85,11 @@ fn test_rules_file_includes() {
         compat: "N/A",
         symbols: "N/A",
 
-        should_fail: true
+        should_fail: true,
     };
-    
+
     assert!(test_rules(&mut ctx, test3));
-    
+
     let test4 = TestData {
         rules: "inc-src-before-after",
         model: "before_model",
@@ -111,7 +102,7 @@ fn test_rules_file_includes() {
         compat: "default_compat",
         symbols: "default_symbols",
 
-        should_fail: false
+        should_fail: false,
     };
     assert!(test_rules(&mut ctx, test4));
 
@@ -127,12 +118,11 @@ fn test_rules_file_includes() {
         compat: "default_compat+substring+group(bla)|some:compat",
         symbols: "my_symbols+extra_variant+altwin(menu)",
 
-        should_fail: false
+        should_fail: false,
     };
-    
 
     assert!(test_rules(&mut ctx, test5));
-    
+
     let test6 = TestData {
         rules: "inc-src-loop-twice",
         model: "my_model",
@@ -145,12 +135,8 @@ fn test_rules_file_includes() {
         compat: "default_compat",
         symbols: "my_symbols",
 
-        should_fail: false
+        should_fail: false,
     };
-    
+
     assert!(test_rules(&mut ctx, test6));
-        
-
-
-
 }

@@ -1,16 +1,11 @@
 use crate::lexer::Token;
 
-use std::sync::{Arc, Mutex};
-use crate::context::Context;
 use crate::atom::Atom;
 use crate::parser_utils::*;
 use crate::errors::*;
 
 
-use crate::xkbcomp::{
-	xkbcomp::*,
-	ast::*,
-};
+use crate::xkbcomp::ast::*;
 
 use xkeysym::Keysym;
 use crate::rust_xkbcommon::Keycode;
@@ -35,11 +30,11 @@ CommaPlus<T>: Vec<T> = {
 }
 	
 
-pub XkbFiles: Vec<Result<XkbFile, KeymapErr>> = {
+pub XkbFiles: Vec<Result<XkbFile, AstError>> = {
 	<files:XkbFile+> => files
 
 }
-XkbFile: Result<XkbFile,KeymapErr> = {
+XkbFile: Result<XkbFile,AstError> = {
 	<map:XkbCompositeMap> => {
 		//param.more_maps = map.is_ok();
 		//param.rtrn = map?; 
@@ -52,12 +47,12 @@ XkbFile: Result<XkbFile,KeymapErr> = {
 		 },
 }
 
-XkbCompositeMap: Result<XkbFile,KeymapErr> = {
+XkbCompositeMap: Result<XkbFile,AstError> = {
 	<flags:OptFlags> <file_type:XkbCompositeType>
 	<name:OptMapName> "OBRACE" <l:XkbMapConfigList>
 	"CBRACE" ";"
-	=> XkbFile::create(
-		file_type, name, Some(l?), None, flags)
+	=> Ok(XkbFile::create(
+		file_type, name, Some(l?), None, flags))
 }
 
 XkbCompositeType: XkbFileType = {
@@ -66,26 +61,22 @@ XkbCompositeType: XkbFileType = {
 	"XKB_LAYOUT" => XkbFileType::Keymap,
 }
 
-XkbMapConfigList: Result<Vec<XkbFile>,KeymapErr> = {
+XkbMapConfigList: Result<Vec<XkbFile>,AstError> = {
 	<l:XkbMapConfig+>  => l.into_iter().collect()
 }
 
-XkbMapConfig: Result<XkbFile,KeymapErr> = {
+XkbMapConfig: Result<XkbFile,AstError> = {
 	<opt_flags:OptFlags>
 	<file_type:FileType>
 	<map_name:OptMapName> "OBRACE"
 	<decls:DeclList>
 	 "CBRACE" ";"
-	=> {
-	
-	
-		XkbFile::create(
+	=> Ok(XkbFile::create(
 		file_type, 
 		map_name,
 		None,
 		Some(decls?),
-		opt_flags)
-		}
+		opt_flags))
 }
 
 FileType: XkbFileType = {
@@ -121,7 +112,7 @@ Flag: XkbMapFlags = {
 	}
 
 
-DeclList: Result<Vec<Decl>, KeymapErr> = {
+DeclList: Result<Vec<Decl>, AstError> = {
 
 	<decl_list: Decl*> => {	
 		let mut decls: Vec<Decl> = vec![];
@@ -134,11 +125,11 @@ DeclList: Result<Vec<Decl>, KeymapErr> = {
 
 }
 
-Decl: Result<Vec<Decl>,KeymapErr> = {
+Decl: Result<Vec<Decl>,AstError> = {
 	#[precedence(level="0")]
 	<m: MergeMode> <s:"STRING"> => {
 		let stmt = IncludeStmt::create(
-			&mut param.ctx, &s, m)?;
+			&mut param.ctx, &s, m);
 		Ok(vec![Decl::Include(stmt)])	
 	},
 	#[precedence(level="1")] #[assoc(side="right")]
@@ -175,11 +166,13 @@ Decl: Result<Vec<Decl>,KeymapErr> = {
 		Ok(vec![Decl::LedName(d)]) },
 	<m:OptMergeMode> <vmod_list:VModDecl> => {
 		
-		let mut v = vmod_list?;
-		let list = v.into_iter().map(|mut vmod| {
-			vmod.merge = m;
-			Decl::VMod(vmod)
-		}).collect();
+		let list = vmod_list?
+			.into_iter()
+			.map(|mut vmod| {
+				vmod.merge = m;
+				Decl::VMod(vmod)
+			}
+		).collect();
 		Ok(list)
 	},
 	#[precedence(level="2")]
@@ -193,7 +186,7 @@ Decl: Result<Vec<Decl>,KeymapErr> = {
 
 
 
-VarDecl: Result<VarDef,KeymapErr> = {
+VarDecl: Result<VarDef,AstError> = {
 	#[precedence(level="0")]
 	<i:Ident> ";"
 		=> VarDef::create_bool(i,true),
@@ -204,27 +197,27 @@ VarDecl: Result<VarDef,KeymapErr> = {
 		=> VarDef::create(Some(lhs?),e?),
 }
 
-KeyNameDecl: Result<KeycodeDef,KeymapErr> = {
+KeyNameDecl: Result<KeycodeDef,AstError> = {
 	<k:KeyName> "=" <c:KeyCode> ";"
 	=> KeycodeDef::create(k,c.raw().into())
 }
 
-KeyAliasDecl: Result<KeyAliasDef,KeymapErr> = {
+KeyAliasDecl: Result<KeyAliasDef,AstError> = {
 	"ALIAS" <a:KeyName> "=" <b:KeyName> ";"
 	=> KeyAliasDef::create(a,b)
 	}
 
 
-VModDecl: Result<Vec<VModDef>,KeymapErr> = {
+VModDecl: Result<Vec<VModDef>,AstError> = {
 	"VIRTUAL_MODS" <l:VModDefList> ";" => l
 	}
 
-VModDefList: Result<Vec<VModDef>,KeymapErr> = {
+VModDefList: Result<Vec<VModDef>,AstError> = {
 	<l: CommaPlus<VModDef>> 
 		=> l.into_iter().collect()	
 }
 
-VModDef: Result<VModDef,KeymapErr> = {
+VModDef: Result<VModDef,AstError> = {
 	#[precedence(level="0")]
 	<i: Ident> => VModDef::create(i,None),
 	#[precedence(level="1")] #[assoc(side="right")]
@@ -232,7 +225,7 @@ VModDef: Result<VModDef,KeymapErr> = {
 
 }
 
-InterpretDecl: Result<InterpDef,KeymapErr> = {
+InterpretDecl: Result<InterpDef,AstError> = {
 	"INTERPRET" <m:InterpretMatch> "OBRACE" <l:VarDeclList> "CBRACE" ";"
 	=> {	let mut m = m?;
 		m.set_def(l?); Ok(m)
@@ -242,7 +235,7 @@ InterpretDecl: Result<InterpDef,KeymapErr> = {
 }
 
 
-InterpretMatch: Result<InterpDef,KeymapErr> = {
+InterpretMatch: Result<InterpDef,AstError> = {
 	#[precedence(level="0")]
 	<k:Keysym> => 
 		InterpDef::create(k,None),
@@ -251,30 +244,30 @@ InterpretMatch: Result<InterpDef,KeymapErr> = {
 		InterpDef::create(k,Some(e?))
 }
 
-VarDeclList: Result<Vec<VarDef>,KeymapErr> = {
+VarDeclList: Result<Vec<VarDef>,AstError> = {
 	<v:VarDecl+> => v.into_iter().collect()
 } 
 
 
-KeyTypeDecl: Result<KeyTypeDef,KeymapErr> = {
+KeyTypeDecl: Result<KeyTypeDef,AstError> = {
 	"TYPE" <s:String> "OBRACE"
 	<v:VarDeclList> "CBRACE" ";"
 		=> KeyTypeDef::create(s,v?)
 }
 
-SymbolsDecl: Result<SymbolsDef,KeymapErr> = {
+SymbolsDecl: Result<SymbolsDef,AstError> = {
 	"KEY" <keyname:KeyName>
 	"OBRACE" <s:SymbolsBody> "CBRACE" ";"
 	=> SymbolsDef::create(keyname,s?)
 }
 
-SymbolsBody: Result<Vec<VarDef>,KeymapErr> = {
+SymbolsBody: Result<Vec<VarDef>,AstError> = {
 	<s:CommaPlus<SymbolsVarDecl>> => s.into_iter().collect()
 
 }
 
 
-SymbolsVarDecl: Result<VarDef,KeymapErr> = {
+SymbolsVarDecl: Result<VarDef,AstError> = {
 	#[precedence(level="0")]
 	<ident:Ident>
 		=> VarDef::create_bool(ident,true),
@@ -290,19 +283,19 @@ SymbolsVarDecl: Result<VarDef,KeymapErr> = {
 		=> VarDef::create(Some(lhs?),a?),
 }
 
-ArrayInit: Result<ExprDef, KeymapErr> = {
+ArrayInit: Result<ExprDef, AstError> = {
 	#[precedence(level="0")]
-	"[" <l:ActionList> "]" => {ExprActionList::create(l?) },
+	"[" <l:ActionList> "]" => ExprActionList::create(l?),
 	#[precedence(level="1")] #[assoc(side="right")]
 	"[" <l:KeysymList> "]" => Ok(ExprDef::KeysymList(l)),
 }
 
-GroupCompatDecl: Result<GroupCompatDef,KeymapErr> = {
+GroupCompatDecl: Result<GroupCompatDef,AstError> = {
 	"GROUP" <i:Integer> "=" <e:Expr> ";"
 	=> GroupCompatDef::create(i.try_into().unwrap(),e?)
 }
 
-ModMapDecl: Result<ModMapDef,KeymapErr> = {
+ModMapDecl: Result<ModMapDef,AstError> = {
 	"MODIFIER_MAP" <i:Ident>
 	"OBRACE" <l:ExprList> "CBRACE" ";"
 	=> {
@@ -311,7 +304,7 @@ ModMapDecl: Result<ModMapDef,KeymapErr> = {
 	}
 }
 
-LedMapDecl: Result<LedMapDef, KeymapErr> = {
+LedMapDecl: Result<LedMapDef, AstError> = {
 	"INDICATOR" <s:String> 
 	"OBRACE" <l:VarDeclList> "CBRACE" ";"
 		=> {
@@ -319,7 +312,7 @@ LedMapDecl: Result<LedMapDef, KeymapErr> = {
 	}
 }
 
-LedNameDecl: Result<LedNameDef,KeymapErr> = {
+LedNameDecl: Result<LedNameDef,AstError> = {
 	"INDICATOR" <i:Integer> "=" <e:Expr> ";"
 	=> LedNameDef::create(i.try_into().unwrap(),e?,false),
 	"VIRTUAL" "INDICATOR" <i:Integer> "=" <e:Expr> ";"
@@ -431,14 +424,14 @@ MergeMode: MergeMode = {
 	"ALTERNATE" => MergeMode::Default // no longer supported
 }
 
-ExprList: Result<Vec<ExprDef>,KeymapErr> = {
+ExprList: Result<Vec<ExprDef>,AstError> = {
 	<l: Comma<Expr>> => l.into_iter().collect() 
 
 }
 
 // TODO: not sure about precedence
 
-Expr: Result<ExprDef,KeymapErr> = {
+Expr: Result<ExprDef,AstError> = {
 	#[precedence(level="0")]
 	<t:Term> => t,
 	#[precedence(level="1")] #[assoc(side="left")]
@@ -459,7 +452,7 @@ Expr: Result<ExprDef,KeymapErr> = {
 
 }
 
-Term: Result<ExprDef,KeymapErr> = {
+Term: Result<ExprDef,AstError> = {
 	#[precedence(level="0")]
 	<t:Terminal> => t,
 	
@@ -495,11 +488,11 @@ Term: Result<ExprDef,KeymapErr> = {
 
 }
 
-ActionList: Result<Vec<ExprDef>,KeymapErr> = {
+ActionList: Result<Vec<ExprDef>,AstError> = {
 	<a: CommaPlus<Action>> => a.into_iter().collect()
 } 
 
-Action: Result<ExprDef,KeymapErr>= {
+Action: Result<ExprDef,AstError>= {
 
 	<f:FieldSpec> "(" <l:ExprList> ")"
 	=> {
@@ -507,7 +500,7 @@ Action: Result<ExprDef,KeymapErr>= {
 	}
 }
 
-Lhs: Result<ExprDef, KeymapErr> = {
+Lhs: Result<ExprDef, AstError> = {
 	#[precedence(level="0")]
 	<f:FieldSpec> => ExprIdent::create(f),
 
@@ -525,11 +518,11 @@ Lhs: Result<ExprDef, KeymapErr> = {
 	=> ExprArrayRef::create(Some(a),b,e?)	
 	}
 
-Terminal: Result<ExprDef,KeymapErr> = {
-	<s:String> => { ExprString::create(s) },
-	<i:Integer> => { ExprInteger::create(i.into()) },
-	<f: Float> => { ExprFloat::create(f) },
-	<k: KeyName> => { ExprKeyName::create(k) },
+Terminal: Result<ExprDef,AstError> = {
+	<s:String> => ExprString::create(s),
+	<i:Integer> => ExprInteger::create(i.into()),
+	<f: Float> => ExprFloat::create(f),
+	<k: KeyName> => ExprKeyName::create(k),
 }
 
 KeysymList: ExprKeysymList = {

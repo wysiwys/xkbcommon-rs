@@ -1,32 +1,51 @@
-
 // combination of context.c and context-priv.c
-
 
 // #include "atom.h"
 // #include "messages-codes.h"
 
 use crate::atom::*;
 use crate::config::*;
-use crate::utils::*;
 use crate::errors::*;
-use crate::rust_xkbcommon::{
-    RuleNames,
-    ContextFlags,
-};
+use crate::rust_xkbcommon::{ContextFlags, RuleNames};
+use crate::utils::*;
 
-use std::env;
+
+use thiserror::Error;
+
+#[derive(Debug,Error)]
+pub enum IncludePathResetDefaultsError {
+    #[error("Default include paths could not be appended, but previous paths were cleared")]
+    AllDefaultsFailed
+
+}
+
+#[derive(Debug,Error)]
+pub enum IncludePathAppendError {
+    #[error("The provided directory was not found: {path}")]
+    DirectoryNotFound{ 
+        path: String,
+        error: std::io::Error
+    },
+
+    #[error("The provided file is not a directory: {0}")]
+    IsNotDirectory(String),
+
+    #[error("Do not have R_OK | X_OK eacces for {0}")]
+    NoEaccesForFile(String),
+
+    #[error("All default includes failed")]
+    AllDefaultsFailed
+
+}
 
 #[derive(Debug)]
 pub enum ContextError {
-
     Nix(nix::Error),
-    Std(std::io::Error)
-
+    Std(std::io::Error),
 }
 
 #[derive(Clone)]
 pub struct Context {
-
     //refcnt: i32,
     log_verbosity: i32,
     //user_data: *void,
@@ -47,16 +66,14 @@ pub struct Context {
     // TODO: data type
     use_environment_names: bool,
     use_secure_getenv: bool,
-
 }
 
+#[allow(dead_code)]
 impl Context {
-
-
     /// Create a new context
-    pub fn new<T>(flags: T)
-        -> Result<Self, ContextError> 
-        where T: Into<ContextFlags>
+    pub fn new<T>(flags: T) -> Result<Self, ContextError>
+    where
+        T: Into<ContextFlags>,
     {
         // TODO: take int as argument
         // TODO: logging
@@ -65,64 +82,42 @@ impl Context {
         let context_flags = flags.into();
 
         let mut context = Self {
-            
             log_verbosity: 0,
-            use_environment_names: 
-                !context_flags.intersects(ContextFlags::NO_ENVIRONMENT_NAMES),
+            use_environment_names: !context_flags.intersects(ContextFlags::NO_ENVIRONMENT_NAMES),
             use_secure_getenv: false,
-                // !context_flags.intersects(ContextFlags::NO_SECURE_GETENV),
-           
+            // !context_flags.intersects(ContextFlags::NO_SECURE_GETENV),
             atom_table: AtomTable::new(),
 
             includes: vec![],
             failed_includes: vec![],
-
             // Unimplemented members
 
             //x11_atom_cache: None,
-            //names_dflt: todo!(),
-            //text_buffer: todo!(),
-            //text_next: todo!(),
-
+            //names_dflt
+            //text_buffer
+            //text_next
         };
 
         if !context_flags.intersects(ContextFlags::NO_DEFAULT_INCLUDES) {
-
-            if let Err(e) = context.include_path_append_default() {
-
+            if let Err(_) = context.include_path_append_default() {
                 // TODO: ensure these paths are correct
-                log::error!("{:?}: failed to add default include path {}",
+                log::error!(
+                    "{:?}: failed to add default include path {}",
                     XkbMessageCode::NoId,
-                    DFLT_XKB_CONFIG_ROOT);
-
-
+                    DFLT_XKB_CONFIG_ROOT
+                );
             }
-
-
         }
 
-
         Ok(context)
-
-        
-
-
     }
 
-    pub(crate) fn getenv(
-        &self,
-        name: &str) -> Option<String> {
-
+    // Corresponds to `xkb_context_getenv`
+    pub(crate) fn getenv(&self, name: &str) -> Option<String> {
         if self.use_secure_getenv {
             todo!()
         } else {
-            if name == "HOME" {
-                match std::env::home_dir() {
-                    Some(p) => p.as_os_str().to_str().map(|p| p.to_string()),
-                    None => None }
-            } else {
                 std::env::var(name).ok()
-            }
         }
     }
 
@@ -130,138 +125,95 @@ impl Context {
         self.failed_includes.len()
     }
 
-    fn failed_include_path_get<'s>(
-        &'s self, idx: usize)
-        -> Option<&'s str> {
-
-            self.failed_includes.get(idx).map(|s| s.as_str())
-
+    fn failed_include_path_get<'s>(&'s self, idx: usize) -> Option<&'s str> {
+        self.failed_includes.get(idx).map(|s| s.as_str())
     }
-
 
     pub(crate) fn atom_lookup(&self, string: &str) -> Option<Atom> {
-
         // This is done by accessing the table directly
         self.atom_table.atom_lookup(string)
-
     }
-    
-    pub(crate) fn atom_intern(
-        &mut self,
-        string: String
-    ) -> Atom {
 
+    pub(crate) fn atom_intern(&mut self, string: String) -> Atom {
         self.atom_table.intern(string)
-
     }
 
-    pub(crate) fn xkb_atom_text<'a>(
-        &'a self,
-        atom: Atom) -> Option<&'a str> {
-
+    pub(crate) fn xkb_atom_text<'a>(&'a self, atom: Atom) -> Option<&'a str> {
         self.atom_table.get(atom)
-
     }
 
-    fn get_default_rules(&self) 
-        -> String {
-
-            if self.use_environment_names {
-                match self.getenv("XKB_DEFAULT_RULES") {
-                    Some(rules) => rules,
-                    None => DEFAULT_XKB_RULES.into()
-                }
-            } else {
-                DEFAULT_XKB_RULES.into()
+    fn get_default_rules(&self) -> String {
+        if self.use_environment_names {
+            match self.getenv("XKB_DEFAULT_RULES") {
+                Some(rules) => rules,
+                None => DEFAULT_XKB_RULES.into(),
             }
-
-    }
-
-    fn get_default_model(&self)
-        -> String {
-
-            if self.use_environment_names {
-                match self.getenv("XKB_DEFAULT_MODEL") {
-                    Some(rules) => rules,
-                    None => DEFAULT_XKB_MODEL.into()
-                }
-            } else {
-                DEFAULT_XKB_MODEL.into()
-            }
-
-    }
-    fn get_default_layout(&self)
-        -> String {
-
-            if self.use_environment_names {
-                match self.getenv("XKB_DEFAULT_LAYOUT") {
-                    Some(rules) => rules,
-                    None => DEFAULT_XKB_LAYOUT.into()
-                }
-            } else {
-                DEFAULT_XKB_LAYOUT.into()
-            }
-
-    }
-
-    fn get_default_variant(&self)
-        -> String {
-
-            let mut env = None;
-            let layout = self.getenv("XKB_DEFAULT_LAYOUT");
-
-            // We don't want to inherit the variant if they haven't
-            // also set a layout, since they're so closely
-            // paired.
-            if layout.is_some() && self.use_environment_names {
-                env = self.getenv("XKB_DEFAULT_VARIANT");
-
-            }
-
-            match env {
-                Some(env) => env,
-                None => DEFAULT_XKB_VARIANT.into()
-            }
-
-    }
-    fn get_default_options(&self)
-        -> String {
-
-            if self.use_environment_names {
-                match self.getenv("XKB_DEFAULT_OPTIONS") {
-                    Some(rules) => rules,
-                    None => DEFAULT_XKB_OPTIONS.into()
-                }
-            } else {
-                DEFAULT_XKB_OPTIONS.into()
-            }
-
-    }
-
-    pub(crate) fn sanitize_rule_names(
-        &self,
-        rmlvo: &mut RuleNames) {
-
-        if rmlvo.rules == Some("".into()) 
-            || rmlvo.rules.is_none() {
-
-                rmlvo.rules = Some(self.get_default_rules());
-
+        } else {
+            DEFAULT_XKB_RULES.into()
         }
-        
-        if rmlvo.model == Some("".into()) 
-            || rmlvo.model.is_none() {
+    }
 
-                rmlvo.model = Some(self.get_default_model());
+    fn get_default_model(&self) -> String {
+        if self.use_environment_names {
+            match self.getenv("XKB_DEFAULT_MODEL") {
+                Some(rules) => rules,
+                None => DEFAULT_XKB_MODEL.into(),
+            }
+        } else {
+            DEFAULT_XKB_MODEL.into()
+        }
+    }
+    fn get_default_layout(&self) -> String {
+        if self.use_environment_names {
+            match self.getenv("XKB_DEFAULT_LAYOUT") {
+                Some(rules) => rules,
+                None => DEFAULT_XKB_LAYOUT.into(),
+            }
+        } else {
+            DEFAULT_XKB_LAYOUT.into()
+        }
+    }
 
+    fn get_default_variant(&self) -> String {
+        let mut env = None;
+        let layout = self.getenv("XKB_DEFAULT_LAYOUT");
+
+        // We don't want to inherit the variant if they haven't
+        // also set a layout, since they're so closely
+        // paired.
+        if layout.is_some() && self.use_environment_names {
+            env = self.getenv("XKB_DEFAULT_VARIANT");
+        }
+
+        match env {
+            Some(env) => env,
+            None => DEFAULT_XKB_VARIANT.into(),
+        }
+    }
+    fn get_default_options(&self) -> String {
+        if self.use_environment_names {
+            match self.getenv("XKB_DEFAULT_OPTIONS") {
+                Some(rules) => rules,
+                None => DEFAULT_XKB_OPTIONS.into(),
+            }
+        } else {
+            DEFAULT_XKB_OPTIONS.into()
+        }
+    }
+
+    pub(crate) fn sanitize_rule_names(&self, rmlvo: &mut RuleNames) {
+        if rmlvo.rules == Some("".into()) || rmlvo.rules.is_none() {
+            rmlvo.rules = Some(self.get_default_rules());
+        }
+
+        if rmlvo.model == Some("".into()) || rmlvo.model.is_none() {
+            rmlvo.model = Some(self.get_default_model());
         }
 
         // Layout and variant are tied together,
-        // so don't try to use one from the caller 
+        // so don't try to use one from the caller
         // and one from the environment.
-        if rmlvo.layout == Some("".into()) 
-            || rmlvo.layout.is_none() {
-
+        if rmlvo.layout == Some("".into()) || rmlvo.layout.is_none() {
             rmlvo.layout = Some(self.get_default_layout());
             if rmlvo.variant.is_some() {
                 let variant = self.get_default_variant();
@@ -271,129 +223,95 @@ impl Context {
                     rmlvo.layout.as_ref().unwrap(),
                     variant
                 );
-
-
             }
             rmlvo.variant = Some(self.get_default_variant());
-
         }
         // Options can be empty,
         // so respect that if passed in
-        if rmlvo.options == Some("".into()) 
-            || rmlvo.options.is_none() {
-
+        if rmlvo.options.is_none() || rmlvo.options == Some("".into()) {
             rmlvo.options = Some(self.get_default_options());
         }
-
-
     }
 
-
-
-    pub fn include_path_append(
-        &mut self,
-        path: &str
-    ) -> Result<(),ContextError>{
-
-
-        use nix::Error;
+    pub fn include_path_append(&mut self, path: &str) -> Result<(), IncludePathAppendError> {
         use nix::unistd::AccessFlags;
 
-        let mut err = ContextError::Nix(Error::ENOMEM);
-
         use std::fs;
-        // TODO: append one directory 
-        // to the context's include path
 
-        if let Ok(metadata) = fs::metadata(path.clone()) {
+        let err: Result<(), IncludePathAppendError> = {
+            let metadata = fs::metadata(path)
+                .map_err(|e| IncludePathAppendError::DirectoryNotFound{
+                    path: path.into(),
+                    error: e
+                })?;
 
             if !metadata.is_dir() {
-
-                err = ContextError::Nix(Error::ENOTDIR);
-
-
-            } else {
-
-                let mode = AccessFlags::R_OK |
-                    AccessFlags::X_OK;
-                if !check_permissions(&metadata, mode.bits()) {
-
-                    err = ContextError::Nix(Error::EACCES);
-                } else {
-
-                    self.includes.push(path.into());
-                    log::debug!("{:?}: Include path added: {}", XkbMessageCode::NoId, path);
-
-                    return Ok(());
-
-                }
-
-
+                return Err(IncludePathAppendError::IsNotDirectory(path.into()));
             }
+
+            // `check_eacces`
+            let mode = AccessFlags::R_OK | AccessFlags::X_OK;
+            if !check_permissions(&metadata, mode) {
+
+                return Err(IncludePathAppendError::NoEaccesForFile(path.into()));
+            }
+
+            Ok(())
+        };
+
+        if let Err(err) = err {
+
+            self.failed_includes.push(path.into());
+            log::debug!("{:?}: Include path failed: {} ({})",
+                XkbMessageCode::NoId,
+                path, err);
+
+            return Err(err);
 
 
         } else {
-            err = ContextError::Std(
-                std::io::Error::last_os_error());
+
+            self.includes.push(path.into());
+            log::debug!("{:?}: Include path added: {}", XkbMessageCode::NoId, path);
+            Ok(())
         }
-
- 
-        self.failed_includes.push(path.into());
-        log::debug!("{:?}: Include path failed: {} ({:?})", XkbMessageCode::NoId, path, err);
-
-        return Err(err);
-
     }
 
-    pub(crate) fn include_path_get_extra_path(
-        &self) -> String { 
-        
+    pub(crate) fn include_path_get_extra_path(&self) -> String {
         let extra = self.getenv("XKB_CONFIG_EXTRA_PATH");
         match extra {
             Some(extra) => extra,
-            None => DFLT_XKB_CONFIG_EXTRA_PATH.to_string()
+            None => DFLT_XKB_CONFIG_EXTRA_PATH.to_string(),
         }
-
     }
 
-    pub(crate) fn include_path_get_system_path(&self)
-        -> String {
-
-        
+    pub(crate) fn include_path_get_system_path(&self) -> String {
         let root = self.getenv("XKB_CONFIG_ROOT");
         match root {
             Some(root) => root,
-            None => DFLT_XKB_CONFIG_ROOT.to_string()
+            None => DFLT_XKB_CONFIG_ROOT.to_string(),
         }
-
     }
 
-    pub fn include_path_append_default(&mut self)
-    -> Result<(), ContextError> {
-
+    /// Append the default include directories to the context.
+    pub fn include_path_append_default(&mut self) -> Result<(), IncludePathAppendError> {
         let mut success = false;
 
         let home = self.getenv("HOME");
         if let Some(xdg) = self.getenv("XDG_CONFIG_HOME") {
             let user_path = format!("{}/xkb", xdg);
-            
+
             if self.include_path_append(&user_path).is_ok() {
                 success = true;
             }
-                
-
         } else if let Some(ref home) = home {
             // XDG_CONFIG_HOME fallback is $HOME/.config/
-            let user_path = format!("{}/.config/xkb",
-                home);
+            let user_path = format!("{}/.config/xkb", home);
 
             if self.include_path_append(&user_path).is_ok() {
                 success = true;
             }
-
-
         }
-
 
         if let Some(home) = home {
             let user_path = format!("{}/.xkb", home);
@@ -407,7 +325,7 @@ impl Context {
         if self.include_path_append(&extra).is_ok() {
             success = true;
         }
-       
+
         let root = self.include_path_get_system_path();
 
         if self.include_path_append(&root).is_ok() {
@@ -417,49 +335,38 @@ impl Context {
         if success {
             Ok(())
         } else {
-            Err(todo!())
+            Err(IncludePathAppendError::AllDefaultsFailed)
         }
     }
 
     /// Remove all entries in the context's include path
     pub fn include_path_clear(&mut self) {
-   
         self.includes.clear();
         self.failed_includes.clear();
     }
 
     /// `include_path_clear()` + `include_path_append_default()`
-    pub fn include_path_reset_defaults(&mut self)
-    -> Result<(), ContextError> {
-
+    pub fn include_path_reset_defaults(&mut self) -> Result<(), IncludePathResetDefaultsError> {
         self.include_path_clear();
         self.include_path_append_default()
-
+            .map_err(|_| IncludePathResetDefaultsError::AllDefaultsFailed)
     }
 
     /// Returns the number of entries in the context's include path.
     pub fn num_include_paths(&self) -> usize {
-
         self.includes.len()
     }
 
-    /// Returns the given entry in the context's include path, 
+    /// Returns the given entry in the context's include path,
     /// or None if an invalid index is passed.
     pub fn include_path_get(&self, idx: usize) -> Option<&String> {
-
         self.includes.get(idx)
     }
 
-
-    pub fn get_log_verbosity(
-        &self) -> i32 {
+    pub fn get_log_verbosity(&self) -> i32 {
         self.log_verbosity
     }
-    pub fn set_log_verbosity(
-        &mut self, verbosity: i32) {
+    pub fn set_log_verbosity(&mut self, verbosity: i32) {
         self.log_verbosity = verbosity;
     }
-
 }
-
-

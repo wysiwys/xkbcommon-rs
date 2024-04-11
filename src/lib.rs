@@ -25,8 +25,8 @@
 //! clients, and the two should generally not be mixed.
 //!
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
-#![allow(warnings)]
-#![crate_name="xkb_rust"]
+//#![allow(warnings)]
+#![crate_name = "xkb_rust"]
 #![forbid(unsafe_code)]
 mod keysyms_utf;
 // generated in project 26
@@ -35,19 +35,19 @@ mod keysyms_generated_phf;
 
 mod keysyms;
 
+mod atom;
+mod context;
+pub mod errors;
 mod keymap;
 mod state;
-mod context;
-mod atom;
-pub mod errors;
 
-mod xkbcomp;
 mod rust_xkbcommon;
+mod xkbcomp;
 
-
-mod utils;
 mod parser_utils;
+mod utils;
 
+mod utf8;
 mod text;
 
 mod config;
@@ -69,7 +69,6 @@ pub use context::Context;
 ///
 /// A keymap is immutable after it is created.
 /// If you need to change it, you must create a new one.
-
 pub use keymap::Keymap;
 
 /// Opaque keyboard state object.
@@ -110,8 +109,7 @@ pub use rust_xkbcommon::RawKeycode;
 /// The keymap defines a canonical name for each key, plus possible aliases.
 /// Historically, the XKB protocol restricts these names to at most 4 (ASCII) characters,
 /// but this library does not share this limit.
-#[derive(Clone,Copy,Debug)]
-#[derive(PartialOrd,Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialOrd, Ord, PartialEq, Eq)]
 pub struct Keycode(RawKeycode);
 
 pub use keymap::XKB_MAX_GROUPS;
@@ -121,11 +119,10 @@ mod lexer;
 use lalrpop_util::lalrpop_mod;
 lalrpop_mod!(pub(crate) parser);
 
-
 // keywords list generated in build.rs
 mod keywords;
 
-/// Re-export of [`xkeysym::NO_SYMBOL`]: 
+/// Re-export of [`xkeysym::NO_SYMBOL`]:
 pub use xkeysym::NO_SYMBOL;
 
 /// Re-export of [`xkeysym::Keysym`]
@@ -146,7 +143,6 @@ pub use xkeysym::NO_SYMBOL;
 /// Keysym names are case-sensitive.
 ///
 pub use xkeysym::Keysym;
-
 
 /// Index of a keyboard layout.
 ///
@@ -180,7 +176,6 @@ pub use rust_xkbcommon::LayoutMask;
 ///
 pub use rust_xkbcommon::LevelIndex;
 
-
 /// Index of a modifier.
 ///
 pub use rust_xkbcommon::ModIndex;
@@ -212,7 +207,6 @@ pub use rust_xkbcommon::XKB_KEYSYM_MAX;
 ///
 pub use rust_xkbcommon::RuleNames;
 
-
 /// Get the name of a keysym.
 ///
 /// For a description of how keysyms are named, see [Keysym].
@@ -240,7 +234,6 @@ pub mod test;
 /// results.
 pub use keysyms::keysym_from_name;
 
-
 /// Consumed modifiers mode.
 ///
 /// There are several possible methods for deciding which modifiers are consumed and which are not,
@@ -250,22 +243,29 @@ pub use keysyms::keysym_from_name;
 /// not reported as consumed even if it would have otherwise.
 pub use rust_xkbcommon::ConsumedMode;
 
-
 pub use rust_xkbcommon::KeymapFormat;
-
 
 pub use rust_xkbcommon::{CompileFlags, ContextFlags, KeyDirection};
 
-macro_rules! log_init {
+pub use rust_xkbcommon::StateComponent;
 
-    () => { use simplelog::*;
+pub use rust_xkbcommon::names::*;
+
+pub use keysyms::*;
+
+#[cfg(test)]
+macro_rules! log_init {
+    () => {
+        use simplelog::*;
 
         TermLogger::init(
-        LevelFilter::Debug, Config::default(), TerminalMode::Mixed, ColorChoice::Auto).unwrap() }
-
+            LevelFilter::Debug,
+            Config::default(),
+            TerminalMode::Mixed,
+            ColorChoice::Auto,
+        )
+        .unwrap()
+    };
 }
+#[cfg(test)]
 pub(crate) use log_init;
-
-
-
-

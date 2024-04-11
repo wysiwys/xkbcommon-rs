@@ -1,4 +1,3 @@
-
 // Licenses from original include.c:
 /************************************************************
  * Copyright (c) 1994 by Silicon Graphics Computer Systems, Inc.
@@ -52,73 +51,57 @@ use crate::context::Context;
 
 use crate::errors::*;
 
-use super::ast::{
-    MergeMode, IncludeStmtPart,
-    XkbFile, XkbFileType
-};
-
+use super::ast::{IncludeStmtPart, MergeMode, XkbFile, XkbFileType};
 
 use logos::Logos;
-
 
 const INCLUDE_MAX_DEPTH: u32 = 15;
 
 impl Context {
-
-
     pub(crate) fn exceeds_include_max_depth(&self, include_depth: u32) -> bool {
-
         if include_depth >= INCLUDE_MAX_DEPTH {
-
-            log::error!("Exceeded include depth threshold {}",
-                INCLUDE_MAX_DEPTH);
+            log::error!("Exceeded include depth threshold {}", INCLUDE_MAX_DEPTH);
             return true;
         } else {
             return false;
-            }
+        }
     }
-
-
-
 }
-struct IncludeStmtPartBuilder{
+struct IncludeStmtPartBuilder {
     file: Option<String>,
     merge: MergeMode,
-    map: Option<String>, // should be an option
+    map: Option<String>,      // should be an option
     modifier: Option<String>, // should be option
-    invalid: bool
-
+    invalid: bool,
 }
 
 impl IncludeStmtPartBuilder {
-
     fn new(merge: MergeMode) -> Self {
-
         Self {
             merge,
-            file: None, map: None, modifier: None,
-            invalid: false
+            file: None,
+            map: None,
+            modifier: None,
+            invalid: false,
         }
     }
 
-    fn build(self) -> Result<IncludeStmtPart, IncludeErr> {
+    fn build(self) -> Result<IncludeStmtPart, ParseIncludeMapError> {
         if self.invalid {
-            return Err(IncludeErr::Illegal);
+            return Err(ParseIncludeMapError::Invalid);
         }
 
         Ok(IncludeStmtPart {
             merge: self.merge,
-            file: self.file.ok_or(IncludeErr::MapWithoutFile)?,
+            file: self.file.ok_or(ParseIncludeMapError::MapWithoutFile)?,
             map: self.map,
-            modifier: self.modifier
+            modifier: self.modifier,
         })
-
-
     }
 }
 
 // TODO: determine whether A-Za-z0-9 is correct here
-#[derive(Logos,Debug)]
+#[derive(Logos, Debug)]
 #[logos(error = &'static str)]
 enum IncludeStatementToken {
     #[regex(r"[\+\|]", |lex| lex.slice().parse().ok().map(|s: String| match s.as_str() {
@@ -134,21 +117,17 @@ enum IncludeStatementToken {
 
     #[regex(r"[^\+\|\(\)\:]+", |lex| lex.slice().parse().ok(), priority = 3)]
     File(String),
-
 }
 
 fn parse_single_include(
     lexer: &mut std::iter::Peekable<logos::Lexer<IncludeStatementToken>>,
-    merge_default: MergeMode)
--> Option<Result<IncludeStmtPart, IncludeErr>>{
-
+    merge_default: MergeMode,
+) -> Option<Result<IncludeStmtPart, ParseIncludeMapError>> {
     use IncludeStatementToken::*;
-    
 
     let mut builder = IncludeStmtPartBuilder::new(merge_default);
     // If no first token, return None
     let mut current_token = lexer.next()?;
-
 
     // process prepended merge modes
     if let Ok(Merge(merge)) = current_token {
@@ -158,12 +137,11 @@ fn parse_single_include(
 
     // process the file
     if let Ok(File(file)) = current_token {
-        builder.file = Some(file); 
+        builder.file = Some(file);
     } else {
         // builder.build() will fail,
         // and this will be skipped
     }
-
 
     // process map and other data if available
     // check to ensure a new map was not started
@@ -181,34 +159,22 @@ fn parse_single_include(
             if builder.map.is_none() {
                 builder.map = Some(map);
             } else {
-                return Some(Err(todo!())); //can only have one map
+                return Some(Err(ParseIncludeMapError::MultipleMaps)); //can only have one map
             }
-
-        }
-
-        else if let Ok(ExtraData(extra_data)) = current_token {
+        } else if let Ok(ExtraData(extra_data)) = current_token {
             if builder.modifier.is_none() {
                 builder.modifier = Some(extra_data);
             } else {
-                return Some(Err(todo!())); // can only have one extra_data
+                return Some(Err(ParseIncludeMapError::MultipleExtraData)); // can only have one extra_data
             }
-        }
-
-        else {
+        } else {
             // Invalid token
-            return Some(Err(todo!()))
-
+            return Some(Err(ParseIncludeMapError::UnexpectedToken));
         }
-
-
-
-
     }
 
     // ran out of tokens
     Some(builder.build())
-
-
 }
 // Parse include statements.
 // Returns a vector of Result<IncludeStmtPart,IncludeErr>,
@@ -216,71 +182,58 @@ fn parse_single_include(
 // along with (possibly) a specific map in the file, and an explicit
 // group designator.
 pub(crate) fn parse_include_maps(
-    str_inout: &str, merge_mode_begin: MergeMode)
--> Vec<Result<IncludeStmtPart, IncludeErr>> {
-
+    str_inout: &str,
+    merge_mode_begin: MergeMode,
+) -> Vec<Result<IncludeStmtPart, ParseIncludeMapError>> {
     let mut stmts = vec![];
 
     let mut lexer = IncludeStatementToken::lexer(str_inout).peekable();
-    
+
     while let Some(include) = parse_single_include(&mut lexer, merge_mode_begin) {
         stmts.push(include);
-
     }
 
     stmts
-
-
 }
 
 impl XkbFileType {
-
-    fn include_dir(&self)
-        -> &'static str {
-
-            use XkbFileType::*;
-            match self {
-                Keycodes => "keycodes",
-                Types => "types",
-                Compat => "compat",
-                Symbols => "symbols",
-                Geometry => "geometry",
-                Keymap => "keymap",
-                Rules => "rules"
-            }
-    }
-
-    fn directory_for_include(&self)
-    -> &'static str {
-
-        self.include_dir()
-
-    }
-
-}
-
-impl Context {
-
-    fn log_include_paths(&self) {
-
-        if self.includes.len() > 0 {
-            log::error!("{:?}: {} include paths searched",
-                XkbError::IncludedFileNotFound,
-                self.includes.len());
-
-            for include in self.includes.iter() {
-
-                log::error!("\t{:?}: {}",
-                    XkbError::IncludedFileNotFound,
-                    include);
-            }
-        } else {
-
-            log::error!("{:?}: There are no included paths to search", XkbError::IncludedFileNotFound);
-
+    fn include_dir(&self) -> &'static str {
+        use XkbFileType::*;
+        match self {
+            Keycodes => "keycodes",
+            Types => "types",
+            Compat => "compat",
+            Symbols => "symbols",
+            Geometry => "geometry",
+            Keymap => "keymap",
+            Rules => "rules",
         }
     }
 
+    fn directory_for_include(&self) -> &'static str {
+        self.include_dir()
+    }
+}
+
+impl Context {
+    fn log_include_paths(&self) {
+        if self.includes.len() > 0 {
+            log::error!(
+                "{:?}: {} include paths searched",
+                XkbError::IncludedFileNotFound,
+                self.includes.len()
+            );
+
+            for include in self.includes.iter() {
+                log::error!("\t{:?}: {}", XkbError::IncludedFileNotFound, include);
+            }
+        } else {
+            log::error!(
+                "{:?}: There are no included paths to search",
+                XkbError::IncludedFileNotFound
+            );
+        }
+    }
 }
 
 use std::path::PathBuf;
@@ -291,27 +244,23 @@ impl Context {
         name: Option<&String>,
         file_type: XkbFileType,
         offset: &mut usize,
-        ) -> Option<(PathBuf, std::fs::File)> {
-
-        
+    ) -> Option<(PathBuf, std::fs::File)> {
         let name = name.cloned().unwrap_or_else(|| "".into());
         let type_dir = file_type.directory_for_include();
 
         for i in *offset..self.num_include_paths() {
+            let include_path = self
+                .include_path_get(i)
+                .expect("Should have include path here");
 
-            let include_path = self.include_path_get(i).expect("Should have include path here");
-
-            let buf = format!("{}/{}/{}",
-                include_path, type_dir, name);
+            let buf = format!("{}/{}/{}", include_path, type_dir, name);
 
             if let Ok(metadata) = std::fs::metadata(&buf) {
                 if metadata.is_file() {
                     if let Ok(file) = std::fs::File::open(buf.clone()) {
-                        
                         *offset = i;
 
                         return Some((buf.into(), file));
-                        
                     }
                 }
             }
@@ -319,75 +268,82 @@ impl Context {
 
         // Only print warnings if can't find file on the first lookup.
         if *offset == 0 {
-            log::error!("{:?}: Couldn't find file \"{}/{}\" in include paths", 
+            log::error!(
+                "{:?}: Couldn't find file \"{}/{}\" in include paths",
                 XkbError::IncludedFileNotFound,
-                type_dir, name);
+                type_dir,
+                name
+            );
 
             self.log_include_paths();
         }
 
         None
-
-        }
+    }
 }
+
 
 pub(super) fn process_include_file(
     ctx: &mut Context,
     stmt: &IncludeStmtPart,
-    file_type: XkbFileType) -> Result<XkbFile, KeymapErr> {
-
-
+    file_type: XkbFileType,
+) -> Result<XkbFile, ProcessIncludeError> {
     let mut offset = 0;
-    let (_, file) = match ctx.find_file_in_xkb_path(Some(&stmt.file), file_type, &mut offset) {
-        Some(file) => file, None => return Err(KeymapErr::NoSuchFile) };
+    let (_, file) = ctx.find_file_in_xkb_path(Some(&stmt.file), file_type, &mut offset)
+    .ok_or_else(|| ProcessIncludeError::NoSuchFile{ 
+        path: stmt.file.clone().into(), file_type})?;
 
     let mut ret = None;
     let mut current_file = Some(file);
 
     while let Some(file) = current_file {
-
-        let xkb_file =  XkbFile::parse_file(
-            ctx, file, &stmt.file, 
-            stmt.map.as_ref().map(|s| s.as_str()))?;
+        let xkb_file =
+            XkbFile::parse_file(ctx, file, &stmt.file, stmt.map.as_ref()
+                .map(|s| s.as_str()))
+                .map_err(|error| ProcessIncludeError::ParseFileFailed{path: stmt.file.clone().into(), error})?; 
 
         current_file = None;
 
         if let Some(xkb_file) = xkb_file {
             if xkb_file.file_type() != file_type {
-                todo!();
+                log::error!("{:?}: Include file of wrong type (expected {:?}, got {:?}); Include file \"{}\" ignored",
+                XkbError::InvalidIncludedFile,
+                file_type,
+                xkb_file.file_type(),
+                stmt.file);
+
                 ret = None;
             } else {
                 ret = Some(xkb_file);
                 break;
             }
-
         }
         offset += 1;
-        if let Some((_,file)) = ctx.find_file_in_xkb_path(Some(&stmt.file), file_type, &mut offset) {
+        if let Some((_, file)) = ctx.find_file_in_xkb_path(Some(&stmt.file), file_type, &mut offset)
+        {
             current_file = Some(file);
         }
-
     }
     // FIXME: we have to check recursive includes here (or somewhere)
 
     if let Some(xkb_file) = ret {
         return Ok(xkb_file);
-
-
     } else {
         if let Some(map) = stmt.map.as_ref() {
-            log::error!("{:?}: Couldn't process include statement for '{}({})'",
-            XkbError::InvalidIncludedFile, stmt.file, map);
-        } 
-        else {
-            log::error!("{:?}: Couldn't process include statement for '{}'",
-            XkbError::InvalidIncludedFile, stmt.file);
+            log::error!(
+                "{:?}: Couldn't process include statement for '{}({})'",
+                XkbError::InvalidIncludedFile,
+                stmt.file,
+                map
+            );
+        } else {
+            log::error!(
+                "{:?}: Couldn't process include statement for '{}'",
+                XkbError::InvalidIncludedFile,
+                stmt.file
+            );
         }
-       
-        // TODO: capture error from file
-        return Err(IncludeErr::InvalidFile.into());
+
+        return Err(ProcessIncludeError::InvalidIncludedFile(stmt.file.clone().into()));
     }
-
-    
-
 }

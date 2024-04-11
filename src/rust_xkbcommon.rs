@@ -1,11 +1,5 @@
-mod names;
+pub(crate) mod names;
 mod rust_xkbcommon;
 
-
-#[cfg(test)]
-mod tests;
-
-// TODO: is this a case for `pub extern crate`?
-pub(crate) use names::*;
+pub(crate) use names::names::*;
 pub use rust_xkbcommon::*;
-

@@ -1,36 +1,36 @@
-
 use logos::Logos;
 
-pub(crate) type Spanned<Tok,Loc> = (Loc,Tok,Loc);
 pub(crate) struct Lexer<'input> {
-    token_stream: logos::SpannedIter<'input, RawToken>
+    token_stream: logos::SpannedIter<'input, RawToken>,
 }
 
 impl<'input> Lexer<'input> {
     pub(crate) fn new(input: &'input str) -> Self {
-        Self { token_stream: RawToken::lexer(input).spanned() }
+        Self {
+            token_stream: RawToken::lexer(input).spanned(),
+        }
     }
 }
 
-impl <'input> Iterator for Lexer<'input> {
+impl<'input> Iterator for Lexer<'input> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.token_stream.next().map(|(raw_token, _span)| {
-            match raw_token {
+        self.token_stream
+            .next()
+            .map(|(raw_token, _span)| match raw_token {
                 Ok(raw_token) => Some(Token::from(raw_token)),
-                Err(_) => None
-            }
-        })?}
+                Err(_) => None,
+            })?
+    }
 }
 
-
+#[allow(dead_code)]
 #[derive(Logos, Debug, PartialEq)]
 enum RawToken {
-
     #[regex("\"[^\"]*\"", |lex| lex.slice().parse().ok().map(|t| process_string(t)), priority=5)]
     String(String),
-    
+
     #[regex(r"[[//]#][^\n]*[\n\r]?", |_| logos::Skip, priority=5)]
     Comment,
 
@@ -42,52 +42,52 @@ enum RawToken {
     #[regex("[ \t\n]+", |_| logos::Skip, priority=3)]
     Whitespace,
 
-    #[token(";",priority=3)]
+    #[token(";", priority = 3)]
     Semi,
 
-    #[token(r"{", priority=3)]
+    #[token(r"{", priority = 3)]
     Obrace,
 
-    #[token(r"}", priority=3)]
+    #[token(r"}", priority = 3)]
     Cbrace,
 
-    #[token("=", priority=3)]
+    #[token("=", priority = 3)]
     Equals,
 
-    #[token(r"[", priority=3)]
+    #[token(r"[", priority = 3)]
     Obracket,
 
-    #[token(r"]", priority=3)]
+    #[token(r"]", priority = 3)]
     Cbracket,
 
-    #[token(r"(", priority=3)]
+    #[token(r"(", priority = 3)]
     Oparen,
 
-    #[token(r")", priority=3)]
+    #[token(r")", priority = 3)]
     Cparen,
 
-    #[token(r".", priority=3)]
+    #[token(r".", priority = 3)]
     Dot,
 
-    #[token(",", priority=3)]
+    #[token(",", priority = 3)]
     Comma,
 
-    #[token("+", priority=3)]
+    #[token("+", priority = 3)]
     Plus,
 
-    #[token(r"-", priority=3)]
+    #[token(r"-", priority = 3)]
     Minus,
 
-    #[token(r"*", priority=3)]
+    #[token(r"*", priority = 3)]
     Times,
 
-    #[token(r"/", priority=3)]
+    #[token(r"/", priority = 3)]
     Divide,
 
-    #[token(r"!", priority=3)]
+    #[token(r"!", priority = 3)]
     Exclam,
 
-    #[token(r"~", priority=3)]
+    #[token(r"~", priority = 3)]
     Invert,
 
     #[regex("[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().parse().ok(), priority=2)]
@@ -99,11 +99,8 @@ enum RawToken {
     UInt(u32),
 
     #[regex(r"[0-9]*\.[0-9]+", |lex| lex.slice().parse().ok(), priority=1)]
-    Float(f64)
+    Float(f64),
 }
-
-
-
 
 #[derive(Logos, Clone, Debug, PartialEq)]
 pub(crate) enum Token {
@@ -178,11 +175,8 @@ impl std::fmt::Display for Token {
     }
 }
 
-
 impl From<RawToken> for Token {
-
     fn from(raw_token: RawToken) -> Self {
-
         match raw_token {
             RawToken::Comment => Token::Comment,
             RawToken::Whitespace => Token::Whitespace,
@@ -203,43 +197,35 @@ impl From<RawToken> for Token {
             RawToken::Plus => Token::Plus,
             RawToken::Minus => Token::Minus,
             RawToken::Times => Token::Times,
-            RawToken::Divide=> Token::Divide,
+            RawToken::Divide => Token::Divide,
             RawToken::Exclam => Token::Exclam,
             RawToken::Invert => Token::Invert,
             RawToken::Keyname(s) => Token::Keyname(s),
-            RawToken::HexNumber(u) => Token::UInt(u)
-
+            RawToken::HexNumber(u) => Token::UInt(u),
         }
-
     }
-
 }
 
 fn hex_convert(token: Option<String>) -> Option<u32> {
-
     if let Some(token) = token {
-        return u32::from_str_radix(&token[2..],16).ok();
-
+        return u32::from_str_radix(&token[2..], 16).ok();
     }
 
     None
-
 }
 
 fn remove_brackets(token: String) -> String {
-
     let mut chars = token.chars();
-    chars.next(); chars.next_back();
+    chars.next();
+    chars.next_back();
     return chars.collect();
-
-
 }
 
 fn process_string(token: String) -> String {
-
     // remove brackets
     let mut chars = token.chars();
-    chars.next(); chars.next_back();
+    chars.next();
+    chars.next_back();
 
     let mut string = String::new();
 
@@ -247,22 +233,18 @@ fn process_string(token: String) -> String {
     // backslash followed by one, two, or three
     // octal digits (0-7)
     while let Some(c) = chars.next() {
-
         if c == '\\' {
             let backslash = c;
 
             for i in 0..3 {
-
                 if let Some(c) = chars.next() {
-
                     if c >= '0' && c <= '7' {
                         // octal digit; skip
                         continue;
-                    } else if i ==0 {
+                    } else if i == 0 {
                         // TODO: does this work?
-                        if ['n','t','r','b','f',
-                        'v',].contains(&c) {
-                            // approved escape 
+                        if ['n', 't', 'r', 'b', 'f', 'v'].contains(&c) {
+                            // approved escape
                             string.push(backslash);
                             string.push(c);
                             break;
@@ -276,29 +258,20 @@ fn process_string(token: String) -> String {
                         string.push(c);
                         break;
                     }
-
                 }
-
             }
         } else {
             string.push(c);
         }
-
     }
 
     string
-
 }
 
 fn keyword_match(token: String) -> Token {
- 
-
     use crate::text::lookup_key;
-    match lookup_key(&crate::keywords::KEYWORDS, &token) { 
+    match lookup_key(&crate::keywords::KEYWORDS, &token) {
         Some(keyword) => keyword.clone(),
-        None => Token::Ident(token)
+        None => Token::Ident(token),
     }
-
-
-
 }

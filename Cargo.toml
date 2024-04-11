@@ -9,6 +9,7 @@ members = ["codegen", "xkeysym"]
 [features]
 client = []
 server = []
+
 [profile.release]
 # for perf
 debug = 2
@@ -29,6 +30,7 @@ xkeysym = { path = "xkeysym" }
 
 # for Error and AccessFlags
 nix = { version = "0.28.0", features = ["fs"] }
+thiserror = "1.0.58"
 
 # for flags
 bitflags = "2.4.2"

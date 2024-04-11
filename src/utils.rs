@@ -1,21 +1,34 @@
 use std::fs::*;
 
+use nix::unistd::AccessFlags;
 
-// TODO: original C version has directives
-// for these cases. What are they for?
-#[cfg(any(have_eaccess, have_euidaccess))]
-pub(super) fn check_permissions(meta: &Metadata, mode: i32) -> bool {
+/// If we can, check that the permission bits of the file permit the requested access.
+#[cfg(target_os = "linux")]
+pub(super) fn check_permissions(meta: &Metadata, requested_mode: AccessFlags) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+
+    // Use the Unix-specifix extensions to `fs::Permissions`,
+    // since the regular permissions only have a read-only bit set.
 
     let permissions = meta.permissions();
-    
-    (permissions.mode() & mode) != 0
-    
+    let actual_mode = permissions.mode().try_into()
+        .expect("Mode requested is negative");
 
+    // truncate: leave any unknown bits unset
+    let actual_mode = AccessFlags::from_bits_truncate(actual_mode);
+
+    actual_mode.intersects(requested_mode)
 }
 
-#[cfg(not(any(have_eaccess, have_euidaccess)))] 
-pub(super) fn check_permissions(meta: &Metadata, mode: i32) -> bool {
+#[cfg(not(target_os = "linux"))]
+pub(super) fn check_permissions(meta: &Metadata, requested_mode: AccessFlags) -> bool {
 
-    true
+    todo!()
+}
+
+
+pub(super) fn one_bit_set(x: u32) -> bool {
+
+    x > 0 && (x & (x-1)) == 0
 
 }

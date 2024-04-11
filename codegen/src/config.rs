@@ -20,6 +20,7 @@ fn xkb_config_extra_path() -> &'static str {
     "/etc/xkb"
 
 }
+
 fn xkb_default_rules() -> &'static str {
 
     // From `meson_options.txt`

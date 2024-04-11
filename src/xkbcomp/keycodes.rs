@@ -2,106 +2,77 @@ use super::ast::*;
 use super::include;
 
 use crate::atom::Atom;
-use crate::errors::*;
 use crate::context::Context;
-use crate::rust_xkbcommon::Keycode;
+use crate::errors::*;
 
 use crate::keymap::XKB_MAX_LEDS;
-use crate::keymap::{
-    KeyBuilder, KeymapBuilder,KeyAlias, Led};
+use crate::keymap::{KeyAlias, KeyBuilder, KeymapBuilder, Led};
 
 use crate::rust_xkbcommon::*;
-
-
 
 struct AliasInfo {
     merge_mode: MergeMode,
     alias: Atom,
-    real: Atom
+    real: Atom,
 }
 
-impl AliasInfo {
 
-    fn new(
-        merge_mode: MergeMode,
-        alias: Atom,
-        real: Atom) -> Self {
-
-        Self { merge_mode, alias, real }
-
-    }
-
-}
-
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug)]
 struct LedNameInfo {
     merge_mode: MergeMode,
-    name: Atom
+    name: Atom,
 }
 
 struct KeyNamesInfo {
     name: Option<String>,
-    error_count: usize,
+    unrecoverable_error: Option<CompileKeycodesError>,
+    errors: Vec<CompileKeycodesError>,
     include_depth: u32, //unsigned int
-                        //
+    //
     min_key_code: RawKeycode,
     max_key_code: RawKeycode,
-    key_names: std::collections::BTreeMap<RawKeycode,Atom>,
-    
+    key_names: std::collections::BTreeMap<RawKeycode, Atom>,
+
     //TODO: different data structure
     //led_names: [LedNameInfo; XKB_MAX_LEDS],
     led_names: [Option<LedNameInfo>; XKB_MAX_LEDS],
     num_led_names: usize, //unsigned into
 
     aliases: Vec<AliasInfo>, //darray
-
 }
 
 impl KeyNamesInfo {
-
-
-    pub(crate) fn new(
-
-    ) -> Self {
-
+    pub(crate) fn new() -> Self {
         if XKB_KEYCODE_INVALID < XKB_KEYCODE_MAX {
-
             // from original implementation
             panic!("Hey, you can't be changing stuff like that.");
         }
         Self {
             include_depth: 0,
             min_key_code: XKB_KEYCODE_INVALID,
-            
+
             // zeroed in original
             max_key_code: 0,
-            error_count: 0,
+            unrecoverable_error: None,
+            errors: vec![],
             num_led_names: 0,
             name: None,
             key_names: std::collections::BTreeMap::new(),
             led_names: [None; XKB_MAX_LEDS],
-            aliases: vec![]
-
-
+            aliases: vec![],
         }
-
     }
 
-    fn find_led_by_name(&self, name: Atom) 
-        -> Option<usize> {
-
+    fn find_led_by_name(&self, name: Atom) -> Option<usize> {
         for idx in 0..self.num_led_names {
-                
             if let Some(Some(ledi)) = self.led_names.get(idx) {
                 if ledi.name == name {
                     return Some(idx);
                 }
             }
-
         }
 
         None
-
     }
 
     fn add_led_name(
@@ -110,32 +81,33 @@ impl KeyNamesInfo {
         merge: MergeMode,
         same_file: bool,
         new: LedNameInfo,
-        new_idx: usize
-    ) -> Result<(),KeycodeErr> {
-
+        new_idx: usize,
+    ) -> Result<(), CompileKeycodesError> {
         let verbosity = ctx.get_log_verbosity();
         let report = (same_file && verbosity > 0) || verbosity > 9;
-        let replace = 
-            merge == MergeMode::Replace 
-             || merge == MergeMode::Override;
-
+        let replace = merge == MergeMode::Replace || merge == MergeMode::Override;
 
         // If this name is found, update it
         if let Some(old_idx) = self.find_led_by_name(new.name) {
             if old_idx == new_idx {
-                log::warn!("Multiple indicators named {:?}; Identical definitions ignored.",
-                    ctx.xkb_atom_text(new.name));
+                log::warn!(
+                    "Multiple indicators named {:?}; Identical definitions ignored.",
+                    ctx.xkb_atom_text(new.name)
+                );
 
                 return Ok(());
-
             }
 
             if report {
                 let _use = if replace { new_idx + 1 } else { old_idx + 1 };
                 let ignore = if replace { old_idx + 1 } else { new_idx + 1 };
-                log::warn!("{:?}: Multiple indicators named {:?}; Using {}, ignoring {}",
-                    XkbMessageCode::NoId, ctx.xkb_atom_text(new.name), _use, ignore);
-
+                log::warn!(
+                    "{:?}: Multiple indicators named {:?}; Using {}, ignoring {}",
+                    XkbMessageCode::NoId,
+                    ctx.xkb_atom_text(new.name),
+                    _use,
+                    ignore
+                );
             }
 
             if replace {
@@ -143,7 +115,6 @@ impl KeyNamesInfo {
             }
 
             return Ok(());
-
         }
 
         // TODO: does this make sense?
@@ -151,45 +122,40 @@ impl KeyNamesInfo {
             self.num_led_names = new_idx + 1;
         }
 
-       if let Some(Some(old)) = self.led_names.get(new_idx) {
+        if let Some(Some(old)) = self.led_names.get(new_idx) {
             // LED with the same index already exists
 
-            let (old_name,new_name) = match replace {
+            let (old_name, new_name) = match replace {
                 true => (new.name, old.name),
-                false => (old.name, new.name)
+                false => (old.name, new.name),
             };
-            log::warn!("Multiple names for indicator {:?}
-                        Using {:?}, ignoring {:?}", new_idx + 1,
-                        ctx.xkb_atom_text(old_name),
-                        ctx.xkb_atom_text(new_name));
+            log::warn!(
+                "Multiple names for indicator {:?}
+                        Using {:?}, ignoring {:?}",
+                new_idx + 1,
+                ctx.xkb_atom_text(old_name),
+                ctx.xkb_atom_text(new_name)
+            );
             if replace {
                 self.led_names[new_idx] = Some(new);
             }
 
             return Ok(());
+        }
 
-       }
-
-       // None of the above cases apply
+        // None of the above cases apply
         self.led_names[new_idx] = Some(new);
 
         return Ok(());
-
-
     }
 
     fn find_key_by_name(&self, name: Atom) -> Option<RawKeycode> {
-
         for idx in self.min_key_code..self.max_key_code {
-
-
             if let Some(item_name) = self.key_names.get(&idx) {
-
                 if *item_name == name {
                     return Some(idx);
                 }
             }
-
         }
 
         None
@@ -202,9 +168,8 @@ impl KeyNamesInfo {
         name: Atom,
         merge: MergeMode,
         same_file: bool,
-        report: bool //TODO: log levels
-        ) -> Result<(),KeycodeErr> {
-
+        report: bool, //TODO: log levels
+    ) -> Result<(), CompileKeycodesError> {
         // TODO: resize self.key_names?
 
         let verbosity = ctx.get_log_verbosity();
@@ -216,36 +181,41 @@ impl KeyNamesInfo {
 
         // there's already a key with this keycode
         if let Some(old_name) = self.key_names.get(&kc) {
-
-            let lname = ctx.xkb_atom_text(*old_name)
-                            .expect("Atom not found");
-            let kname = ctx.xkb_atom_text(name)
-                            .expect("Atom not found");
+            let lname = ctx.xkb_atom_text(*old_name).expect("Atom not found");
+            let kname = ctx.xkb_atom_text(name).expect("Atom not found");
 
             if *old_name == name {
-
                 if report {
-                    log::warn!("Multiple identical key name definitions.
+                    log::warn!(
+                        "Multiple identical key name definitions.
                         Later occurrences of \"{} = {}\" ignored.",
-                        lname, kc);
+                        lname,
+                        kc
+                    );
                 }
 
                 return Ok(());
-
             } else if merge == MergeMode::Augment {
-
-
                 if report {
-                    log::warn!("Multiple names for keycode {};
-                    Using {}, ignoring {}", kc, lname, kname);
+                    log::warn!(
+                        "Multiple names for keycode {};
+                    Using {}, ignoring {}",
+                        kc,
+                        lname,
+                        kname
+                    );
                 }
 
                 return Ok(());
-            } else  {
-
+            } else {
                 if report {
-                    log::warn!("Multiple names for keycode {};
-                    Using {}, ignoring {}", kc, kname, lname);
+                    log::warn!(
+                        "Multiple names for keycode {};
+                    Using {}, ignoring {}",
+                        kc,
+                        kname,
+                        lname
+                    );
                 }
 
                 // TODO: why?
@@ -253,54 +223,53 @@ impl KeyNamesInfo {
             }
 
             // There's already a key with this name
-        if let Some(old_kc) = self.find_key_by_name(name) {
-            if old_kc != XKB_KEYCODE_INVALID && old_kc != kc {
+            if let Some(old_kc) = self.find_key_by_name(name) {
+                if old_kc != XKB_KEYCODE_INVALID && old_kc != kc {
+                    let kname = ctx.xkb_atom_text(name).expect("Atom not found");
 
-                let kname = ctx.xkb_atom_text(name).expect("Atom not found");
+                    if merge == MergeMode::Override {
+                        self.key_names.remove(&old_kc);
+                        self.key_names.insert(kc, name);
 
-                if merge == MergeMode::Override {
-                    self.key_names.remove(&old_kc);
-                    self.key_names.insert(kc, name);
+                        if report {
+                            log::warn!(
+                                "Key name {} assigned to multiple keys;
+                            Using {}, ignoring {}",
+                                kname,
+                                kc,
+                                old_kc
+                            );
+                        }
 
-                    if report {
-                        log::warn!("Key name {} assigned to multiple keys;
-                            Using {}, ignoring {}", kname, kc, old_kc);
+                        return Ok(());
+                    } else {
+                        if report {
+                            log::warn!(
+                                "Key name {} assigned to mulitple keys;
+                            Using {}, ignoring {}",
+                                kname,
+                                old_kc,
+                                kc
+                            );
+                        }
+
+                        return Ok(());
                     }
-
-                    return Ok(());
-                } else {
-
-                    if report {
-                        log::warn!("Key name {} assigned to mulitple keys;
-                            Using {}, ignoring {}", kname, old_kc, kc);
-                    }
-
-
-                    return Ok(());
                 }
-
             }
-
-
         }
 
-        }
-
-        self.key_names.insert(kc,name);
+        self.key_names.insert(kc, name);
         Ok(())
-
-
-
     }
 
-    fn merge_included_keycodes(
-        &mut self,
-        ctx: &Context,  
-        mut from: Self,
-        merge: MergeMode) {
-
-        if from.error_count > 0 {
-            self.error_count += from.error_count;
+    fn merge_included_keycodes(&mut self, ctx: &Context, mut from: Self, merge: MergeMode) {
+        if from.errors.len() > 0 {
+            self.errors.append(&mut from.errors);
+            return;
+        }
+        if let Some(e) = from.unrecoverable_error {
+            self.unrecoverable_error = Some(e);
             return;
         }
 
@@ -312,292 +281,263 @@ impl KeyNamesInfo {
             std::mem::swap(&mut self.key_names, &mut from.key_names);
             self.min_key_code = from.min_key_code;
             self.max_key_code = from.max_key_code;
-        }
-
-        else {
-
+        } else {
             for i in from.min_key_code..from.max_key_code {
                 if let Some(name) = from.key_names.get(&i) {
-                    if self.add_key_name(ctx, i,*name,merge,true,false).is_err() {
-                        self.error_count += 1;
+                    if let Err(e) = self
+                        .add_key_name(ctx, i, *name, merge, true, false)
+                    {
+                        self.errors.push(e);
                     }
-
                 }
-
             }
-
         }
 
         // Merge key aliases
         if self.aliases.is_empty() {
             std::mem::swap(&mut self.aliases, &mut from.aliases);
         } else {
-
             for alias in from.aliases {
+                let mut def = KeyAliasDef::create(alias.alias, alias.real)
+                    .expect("Could not create KeyAliasDef");
 
-
-                let mut def = KeyAliasDef::create(
-                    alias.alias,
-                    alias.real
-                ).expect("Could not create KeyAliasDef");
-
-                def.merge = 
-                    match merge {
-                        MergeMode::Default => alias.merge_mode,
-                        _ =>  merge 
-                    };
+                def.merge = match merge {
+                    MergeMode::Default => alias.merge_mode,
+                    _ => merge,
+                };
 
                 let merge = def.merge;
-                if self.handle_alias_def(ctx, def, merge).is_err() {
-                    self.error_count += 1;
+                if let Err(e) = self.handle_alias_def(ctx, def, merge) {
+                    self.errors.push(e);
                 }
-
             }
-
         }
 
         // Merge LED names
         if self.num_led_names == 0 {
             self.led_names = from.led_names.clone();
             std::mem::swap(&mut self.num_led_names, &mut from.num_led_names);
-        }
-        else {
+        } else {
             for idx in 0..from.num_led_names {
-
                 if let Some(Some(mut ledi)) = from.led_names.get(idx) {
-
                     ledi.merge_mode = match merge {
-                        MergeMode::Default =>  ledi.merge_mode,
-                        _ => merge};
+                        MergeMode::Default => ledi.merge_mode,
+                        _ => merge,
+                    };
 
-                    if self.add_led_name(ctx, ledi.merge_mode, false, ledi, idx).is_err() {
-                        self.error_count += 1;
+                    if let Err(e) = self
+                        .add_led_name(ctx, ledi.merge_mode, false, ledi, idx)
+                    {
+                        self.errors.push(e);
                     }
-
                 }
-
             }
-
-
         }
-
-
-
-
     }
 
     fn handle_include_keycodes(
-        &mut self, 
-        ctx: &mut Context, 
-        include: IncludeStmt)
-    -> Result<(), KeymapErr> {
-
+        &mut self,
+        ctx: &mut Context,
+        include: IncludeStmt,
+    ) -> Result<(), CompileKeycodesError> {
         if ctx.exceeds_include_max_depth(self.include_depth) {
-
-            self.error_count += 10; 
-            return Err(KeycodeErr::ExceedsIncludeMaxDepth.into());
-
+            let err = CompileKeycodesError::ExceedsIncludeMaxDepth(self.include_depth);
+            self.unrecoverable_error = Some(err.clone());
+            return Err(err);
         }
 
         let mut included: KeyNamesInfo = KeyNamesInfo::new();
         // TODO: does name need to be removed from first include?
         included.name = Some(include.stmt.clone());
 
-
         for stmt in include.iter_stmts() {
-
-            let file = match include::process_include_file(
-                ctx, stmt, XkbFileType::Keycodes) {
-                    Err(e) => {
-                        self.error_count += 10;
-                        return Err(e.into());
-                    },
-                    Ok(file) => file
-                };
+            let file = match include::process_include_file(ctx, stmt, XkbFileType::Keycodes) {
+                Err(e) => {
+                    self.unrecoverable_error = Some(e.clone().into());
+                    return Err(e.into());
+                }
+                Ok(file) => file,
+            };
 
             let mut next_incl = KeyNamesInfo::new();
             next_incl.handle_keycodes_file(ctx, file, MergeMode::Override)?;
             included.merge_included_keycodes(ctx, next_incl, stmt.merge);
-
         }
 
         self.merge_included_keycodes(ctx, included, include.merge);
 
-        match self.error_count {
-            0 => return Ok(()),
-            _ => return Err(todo!()) }
+        if let Some(e) = self.unrecoverable_error.as_ref() {
+            return Err(e.clone());
+        }
+        else if self.errors.len() > 0 {
+            return Err(CompileKeycodesError::Multiple(Box::new(self.errors.clone())));
+        }
 
+        Ok(())
     }
 
-    fn handle_keycode_def(&mut self, ctx: &Context, stmt: KeycodeDef, mut merge: MergeMode)
-        -> Result<(), KeymapErr> {
-
-            if stmt.merge != MergeMode::Default {
-                if stmt.merge == MergeMode::Replace {
-                    merge = MergeMode::Override;
-                }
-                else {
-                    merge = stmt.merge;
-                }
+    fn handle_keycode_def(
+        &mut self,
+        ctx: &Context,
+        stmt: KeycodeDef,
+        mut merge: MergeMode,
+    ) -> Result<(), CompileKeycodesError> {
+        if stmt.merge != MergeMode::Default {
+            if stmt.merge == MergeMode::Replace {
+                merge = MergeMode::Override;
+            } else {
+                merge = stmt.merge;
             }
+        }
 
-            if stmt.value < 0 || stmt.value > XKB_KEYCODE_MAX.into() {
-
-                log::error!("Illegal keycode; {:?} must be between 0..{}
+        let value: u32 = match stmt.value.try_into() {
+            Ok(v) if v < XKB_KEYCODE_MAX => v,
+            _ => {
+                log::error!(
+                "Illegal keycode; {:?} must be between 0..{}
                     Key ignored",
-                    stmt.value, XKB_KEYCODE_MAX);
-                return Err(KeycodeErr::IllegalKeycode.into());
+                stmt.value,
+                XKB_KEYCODE_MAX);
+            return Err(CompileKeycodesError::IllegalKeycode(stmt.value))
             }
+        };
 
-
-            self.add_key_name(ctx, 
-                stmt.value.try_into().unwrap(), 
-                stmt.name, merge, false, true)
-                .map_err(|e| e.into())
-
-
-
+        self.add_key_name(
+            ctx,
+            value,
+            stmt.name,
+            merge,
+            false,
+            true,
+        )
+        .map_err(|e| e.into())
     }
 
-    fn handle_alias_def(&mut self, ctx: &Context, def: KeyAliasDef, merge: MergeMode)
-        -> Result<(),KeymapErr> { 
-
-
-            for old in self.aliases.iter_mut() {
-
-                if old.alias == def.alias {
-
-                    if def.real == old.real {
-
-                        log::warn!("{:?}: Alias of {} for {} declared more than once; first definition ignored.",
+    fn handle_alias_def(
+        &mut self,
+        ctx: &Context,
+        def: KeyAliasDef,
+        merge: MergeMode,
+    ) -> Result<(), CompileKeycodesError> {
+        for old in self.aliases.iter_mut() {
+            if old.alias == def.alias {
+                if def.real == old.real {
+                    log::warn!("{:?}: Alias of {} for {} declared more than once; first definition ignored.",
                             XkbWarning::ConflictingKeyName,
                             ctx.key_name_text(def.alias),
                             ctx.key_name_text(def.real))
-                    }
+                } else {
+                    let _use = match merge {
+                        MergeMode::Augment => old.real,
+                        _ => def.real,
+                    };
 
-                    else {
+                    let ignore = match merge {
+                        MergeMode::Augment => def.real,
+                        _ => old.real,
+                    };
 
-                        let _use = match merge {
-                            MergeMode::Augment => old.real,
-                            _ => def.real};
+                    log::warn!(
+                        "{:?}: Multiple definitions for alias {}; Using {}, ignoring {}",
+                        XkbWarning::ConflictingKeyName,
+                        ctx.key_name_text(old.alias),
+                        ctx.key_name_text(_use),
+                        ctx.key_name_text(ignore)
+                    );
 
-                        let ignore = match merge {
-                            MergeMode::Augment => def.real,
-                            _ => old.real};
-
-                        log::warn!("{:?}: Multiple definitions for alias {}; Using {}, ignoring {}", 
-                            XkbWarning::ConflictingKeyName, 
-                            ctx.key_name_text(old.alias),
-                            ctx.key_name_text(_use),
-                            ctx.key_name_text(ignore)
-                            );
-
-                        old.real = _use;
-
-
-                    }
-                    old.merge_mode = merge;
-                    return Ok(());
+                    old.real = _use;
                 }
-
+                old.merge_mode = merge;
+                return Ok(());
             }
+        }
 
-            self.aliases.push(AliasInfo {
-                merge_mode: merge,
-                alias: def.alias,
-                real: def.real,
-            });
-            Ok(())
+        self.aliases.push(AliasInfo {
+            merge_mode: merge,
+            alias: def.alias,
+            real: def.real,
+        });
+        Ok(())
     }
 
-    fn handle_key_name_var(&mut self, ctx: &Context, stmt: VarDef)
-        -> Result<(), KeymapErr> {
-
-
-       let array_ndx = match stmt.name {
-           None => None,
-           Some(name) => name.resolve_lhs(ctx)
-       };
+    fn handle_key_name_var(&mut self, ctx: &Context, stmt: VarDef) -> Result<(), CompileKeycodesError> {
+        let array_ndx = match stmt.name {
+            None => None,
+            Some(name) => name.resolve_lhs(ctx),
+        };
 
         if let Some(lhs) = array_ndx {
-
-            if lhs.elem.is_some() {
-
+            if let Some(ref elem) = lhs.elem {
                 log::error!("Unknown element encountered; Default for field ignored");
 
-                return Err(KeycodeErr::UnknownElement.into());
+                return Err(CompileKeycodesError::UnknownElement(elem.into()));
             }
 
             // TODO: use enum for this?
-            if lhs.field.as_str() != "minimum"
-                && lhs.field.as_str() != "maximum" {
+            if lhs.field.as_str() != "minimum" && lhs.field.as_str() != "maximum" {
+                log::error!("Unknown field encountered; assignment to field ignored");
 
-                    log::error!("Unknown field encountered; assignment to field ignored");
-
-                    return Err(KeycodeErr::UnknownField.into());
-
-
+                return Err(CompileKeycodesError::UnknownField(lhs.field.into()));
             }
 
             return Ok(());
-
-            
-
         } else {
-
-            return Err(KeycodeErr::CouldNotResolveLhs.into());
+            return Err(CompileKeycodesError::CouldNotResolveLhs);
         }
     }
-    
-    fn handle_led_name_def(&mut self, ctx: &Context, def: LedNameDef, merge: MergeMode)
-        -> Result<(), KeymapErr> {
 
-
+    fn handle_led_name_def(
+        &mut self,
+        ctx: &Context,
+        def: LedNameDef,
+        merge: MergeMode,
+    ) -> Result<(), CompileKeycodesError> {
         if def.ndx < 1 || def.ndx > XKB_MAX_LEDS {
-            self.error_count += 1;
 
-            log::error!("Illegal indicator index {:?} specified; must be between 1..{}",def.ndx, XKB_MAX_LEDS);
+            let err = CompileKeycodesError::IllegalIndicatorIndex{index: def.ndx, max: XKB_MAX_LEDS};
+            self.errors.push(err.clone());
 
-            return Err(KeycodeErr::IllegalIndicatorIndex.into());
+            log::error!(
+                "Illegal indicator index {:?} specified; must be between 1..{}",
+                def.ndx,
+                XKB_MAX_LEDS
+            );
+
+            return Err(err);
         }
 
         let name = def.name.resolve_string(ctx);
-        if let Some(name) =  name {
+        if let Some(name) = name {
+            let ledi = LedNameInfo {
+                name,
+                merge_mode: merge,
+            };
 
-                let ledi = LedNameInfo {
-                    name,
-                    merge_mode: merge
-                };
-
-                return self.add_led_name(
-                    ctx,
-                    merge,
-                    true,
-                    ledi,
-                    def.ndx - 1).map_err(|e| e.into());
-
-
-
+            return self
+                .add_led_name(ctx, merge, true, ledi, def.ndx - 1)
+                .map_err(|e| e.into());
         } else {
 
-            self.error_count += 1;
+            ctx.report_bad_type(
+                XkbError::WrongFieldType.into(),
+                "indicator", "name", format!("{}",def.ndx).as_str(), "string");
 
-            // TODO: error log
-
+            let err = CompileKeycodesError::IndicatorBadType;
+            self.errors.push(err.clone());
+            Err(err)
         }
 
-     todo!()   
     }
-    fn handle_keycodes_file(&mut self, 
-        ctx: &mut Context, file: XkbFile, merge: MergeMode)
-        -> Result<(), KeymapErr> {
-
-
+    fn handle_keycodes_file(
+        &mut self,
+        ctx: &mut Context,
+        file: XkbFile,
+        merge: MergeMode,
+    ) -> Result<(), CompileKeycodesError> {
         self.name = Some(file.name);
         // TODO: iterate through the `ParseCommon`s in the XbkFile,
         // i.e. the defs in the list.
         for def in file.defs {
-
             let result = match def {
                 Decl::Include(stmt) 
                     => self.handle_include_keycodes(ctx,stmt),
@@ -611,72 +551,50 @@ impl KeyNamesInfo {
                     => self.handle_led_name_def(ctx, stmt, merge),
                 _ => {
 
-                    Err(KeycodeErr::WrongDeclType.into())
+                    Err(CompileKeycodesError::WrongDeclType)
                 }
 
             };
 
-            if result.is_err() {
-                self.error_count += 1;
+            if let Err(e) = result {
+                self.errors.push(e);
             }
 
-            if self.error_count > 10 {
-
+            if self.errors.len() > 10 || self.unrecoverable_error.is_some() {
                 log::error!("Abandoning keycode file {:?}", self.name);
-
             }
-
         }
 
-    Ok(())
+        Ok(())
     }
-
-
-
 }
 
 impl KeymapBuilder<TextV1> {
+    fn copy_key_names_to_keymap(&mut self, info: &KeyNamesInfo) {
+        let mut min_key_code = info.min_key_code;
+        let mut max_key_code = info.max_key_code;
 
-    fn copy_key_names_to_keymap(&mut self, info: &KeyNamesInfo)
-        -> Result<(), KeymapErr> {
+        if min_key_code == XKB_KEYCODE_INVALID {
+            min_key_code = 8;
+            max_key_code = 255;
+        }
 
-            let mut min_key_code = info.min_key_code;
-            let mut max_key_code = info.max_key_code;
+        self.min_key_code = Some(min_key_code.into());
+        self.max_key_code = Some(max_key_code.into());
 
-            if min_key_code == XKB_KEYCODE_INVALID {
-                min_key_code = 8;
-                max_key_code = 255;
-            }
-
-            self.min_key_code = Some(min_key_code.into());
-            self.max_key_code = Some(max_key_code.into());
-
-            for kc in min_key_code..max_key_code + 1 {
-
-                if let Some(name) 
-                    = info.key_names.get(&kc) {
-
-                // TODO: reduce the number of 
+        for kc in min_key_code..max_key_code + 1 {
+            if let Some(name) = info.key_names.get(&kc) {
+                // TODO: reduce the number of
                 // intermediate stages here?
                 let key_builder = KeyBuilder::new(kc.into(), *name);
-                self.keys.insert(
-                    kc.into(), key_builder
-                    );
-
-                }
-
+                self.keys.insert(kc.into(), key_builder);
             }
-
-
-            Ok(())
-
+        }
 
     }
-    fn copy_key_aliases_to_keymap(&mut self, info: &KeyNamesInfo)
-        -> Result<(), KeymapErr> {
-           
-            // sanity check
-            let aliases = info.aliases.iter().map(|alias| {
+    fn copy_key_aliases_to_keymap(&mut self, info: &KeyNamesInfo) {
+        // sanity check
+        let aliases = info.aliases.iter().map(|alias| {
                 
                 // check that ->real is a key
                 if self.keys.values()
@@ -710,67 +628,48 @@ impl KeymapBuilder<TextV1> {
             })
             .collect::<Vec<KeyAlias>>();
 
-            //self.num_key_aliases = aliases.len();
-            self.key_aliases = Some(aliases);
+        //self.num_key_aliases = aliases.len();
+        self.key_aliases = Some(aliases);
 
-            Ok(())
     }
-    fn copy_led_names_to_keymap(&mut self, info: &KeyNamesInfo)
-        -> Result<(), KeymapErr> {
-
-
-            for idx in 0..info.num_led_names {
-
-                if let Some(Some(ledi)) = info.led_names.get(idx) {
-
-                    self.leds[idx] = Some(Led::new(ledi.name));
-                }
+    fn copy_led_names_to_keymap(&mut self, info: &KeyNamesInfo) {
+        for idx in 0..info.num_led_names {
+            if let Some(Some(ledi)) = info.led_names.get(idx) {
+                self.leds[idx] = Some(Led::new(ledi.name));
             }
-            Ok(())
-
         }
+    }
 
-    fn copy_keynames_info(&mut self, info: KeyNamesInfo)
-        -> Result<(), KeymapErr> {
+    fn copy_keynames_info(&mut self, info: KeyNamesInfo) {
+        self.copy_key_names_to_keymap(&info);
+        self.copy_key_aliases_to_keymap(&info);
+        self.copy_led_names_to_keymap(&info);
 
-            self.copy_key_names_to_keymap(&info)?;
-            self.copy_key_aliases_to_keymap(&info)?;
-            self.copy_led_names_to_keymap(&info)?;
-
-            // TODO: does the original strdup_safe
-            // provide any benefit in Rust
-            // over just copying the name?
-            let escaped_name = info.name;
-            self.keycodes_section_name = escaped_name;
-            
-
-            Ok(())
+        // TODO: does the original strdup_safe
+        // provide any benefit in Rust
+        // over just copying the name?
+        let escaped_name = info.name;
+        self.keycodes_section_name = escaped_name;
 
     }
 }
 
-
 pub(crate) fn compile_keycodes(
     builder: &mut KeymapBuilder<TextV1>,
     file: XkbFile,
-    merge: MergeMode)
--> Result<(),KeymapErr> {
-   
+    merge: MergeMode,
+) -> Result<(), CompileKeycodesError> {
     let mut info = KeyNamesInfo::new();
-    
-    info.handle_keycodes_file(
-        &mut builder.context, 
-        file,
-        merge)?;
-    
-    if info.error_count > 0 {
-        return Err(KeymapErr::CouldNotCompileKeycodes);
 
+    info.handle_keycodes_file(&mut builder.context, file, merge)?;
+
+    if let Some(e) = info.unrecoverable_error {
+        return Err(e);
     }
-    builder.copy_keynames_info(info)?;
+    else if info.errors.len() > 0 {
+        return Err(CompileKeycodesError::Multiple(Box::new(info.errors)));
+    }
+    builder.copy_keynames_info(info);
 
     Ok(())
-
-
-
 }

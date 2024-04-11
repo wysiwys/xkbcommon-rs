@@ -1,4 +1,3 @@
-
 /* Original license of `context.c`:
  * -----------------------------------------
  * Copyright © 2012 Intel Corporation
@@ -27,113 +26,79 @@
  */
 
 use crate::log_init;
-use crate::test::*;
 use crate::rust_xkbcommon::*;
+use crate::test::*;
 
 use crate::config::*;
 
 use crate::context::Context;
-use crate::errors::*;
-use crate::keymap::Keymap;
 
 use std::env;
 use std::path::*;
-use std::sync::{Arc, Mutex};
 
-
-use evdev::Key;
 
 struct Env {
-
     key: String,
-    value: Option<String>
-
+    value: Option<String>,
 }
 
 struct Environment {
-
-    envs: Vec<Env>
-
+    envs: Vec<Env>,
 }
 
 impl Environment {
-
     // corresponds to buffer_env
     fn add_env(&mut self, key: &str) {
-    
         let v = env::var(key);
 
         let e = Env {
             key: key.into(),
-            value: v.ok()
+            value: v.ok(),
         };
 
         self.envs.push(e);
-
     }
 
     fn restore_env(&mut self) {
-
         // removes in reverse order
         while let Some(var) = self.envs.pop() {
-
             if let Some(value) = var.value {
                 env::set_var(var.key, value);
             } else {
                 env::remove_var(var.key)
             }
-
         }
-
     }
-
 }
 
 struct Directories {
-    dirs: Vec<PathBuf>
+    dirs: Vec<PathBuf>,
 }
 
 impl Directories {
-
     fn make_dir(&mut self, parent: &str, path: &str) -> PathBuf {
-
         let dirname = test_makedir(parent, path);
         self.dirs.push(dirname.clone().into());
 
         dirname.into()
-
     }
 
     fn make_tmp_dir(&mut self) -> PathBuf {
-
-        let tmpdir = test_maketempdir(
-            "xkbcommon-test.XXXXXX");
+        let tmpdir = test_maketempdir("xkbcommon-test.XXXXXX");
         self.dirs.push(tmpdir.clone());
 
         tmpdir
-
     }
 
     fn unmake_dirs(&mut self) {
-
         // reverse order
         while let Some(dir) = self.dirs.pop() {
-
-            std::fs::remove_dir_all(dir);
-
+            std::fs::remove_dir_all(dir).unwrap();
         }
-
-
     }
-
 }
 
-fn test_config_root_include_path(
-    env: &mut Environment,
-    dirs: &mut Directories
-    ) {
-
-    
+fn test_config_root_include_path(env: &mut Environment, dirs: &mut Directories) {
     env.add_env("XKB_CONFIG_ROOT");
     env.add_env("HOME");
     env.add_env("XDG_CONFIG_HOME");
@@ -144,8 +109,7 @@ fn test_config_root_include_path(
     env::remove_var("HOME");
     env::remove_var("XDG_CONFIG_HOME");
 
-    let ctx = Context::new(ContextFlags::empty())
-        .unwrap();
+    let ctx = Context::new(ContextFlags::empty()).unwrap();
 
     let nincludes = ctx.num_include_paths();
 
@@ -157,21 +121,16 @@ fn test_config_root_include_path(
 
     dirs.unmake_dirs();
     env.restore_env();
-
 }
 
-fn test_config_root_include_path_fallback(
-    env: &mut Environment,
-    dirs: &mut Directories
-    ) {
-
+fn test_config_root_include_path_fallback(env: &mut Environment, dirs: &mut Directories) {
     let xkbdir = DFLT_XKB_CONFIG_ROOT;
 
     // check the dir exists
     if !Path::new(xkbdir).is_dir() {
         return;
     }
-    
+
     env.add_env("XKB_CONFIG_ROOT");
     env.add_env("HOME");
     env.add_env("XDG_CONFIG_HOME");
@@ -179,9 +138,8 @@ fn test_config_root_include_path_fallback(
     env::remove_var("XKB_CONFIG_ROOT");
     env::remove_var("HOME");
     env::remove_var("XDG_CONFIG_HOME");
-    
-    let ctx = Context::new(ContextFlags::empty())
-        .unwrap();
+
+    let ctx = Context::new(ContextFlags::empty()).unwrap();
 
     let nincludes = ctx.num_include_paths();
 
@@ -193,13 +151,9 @@ fn test_config_root_include_path_fallback(
 
     dirs.unmake_dirs();
     env.restore_env();
-
 }
 
-fn test_xkbdir_include_path(
-    env: &mut Environment,
-    dirs: &mut Directories
-) {
+fn test_xkbdir_include_path(env: &mut Environment, dirs: &mut Directories) {
     env.add_env("HOME");
     env.add_env("XDG_CONFIG_HOME");
 
@@ -212,48 +166,33 @@ fn test_xkbdir_include_path(
     let ctx = Context::new(ContextFlags::empty()).unwrap();
     assert!(ctx.num_include_paths() >= 1);
 
-    let context_path = ctx.include_path_get(0)
-        .map(|p| p.into());
+    let context_path = ctx.include_path_get(0).map(|p| p.into());
 
     assert_eq!(context_path, Some(xkb_path));
 
     dirs.unmake_dirs();
     env.restore_env();
-
 }
 
-fn test_xdg_include_path(
-    env: &mut Environment,
-    dirs: &mut Directories
-) {
-
+fn test_xdg_include_path(env: &mut Environment, dirs: &mut Directories) {
     env.add_env("XDG_CONFIG_HOME");
 
     let tmpdir = dirs.make_tmp_dir();
     let xdg_path = dirs.make_dir(tmpdir.as_os_str().to_str().unwrap(), "xkb");
     env::set_var("XDG_CONFIG_HOME", tmpdir);
-    
+
     let ctx = Context::new(ContextFlags::empty()).unwrap();
     assert!(ctx.num_include_paths() >= 1);
 
-    let context_path = ctx.include_path_get(0)
-        .map(|p| p.into());
+    let context_path = ctx.include_path_get(0).map(|p| p.into());
 
     assert_eq!(context_path, Some(xdg_path));
 
     dirs.unmake_dirs();
     env.restore_env();
-
-
-
 }
 
-
-fn test_xdg_include_path_fallback(
-    env: &mut Environment,
-    dirs: &mut Directories
-) {
-
+fn test_xdg_include_path_fallback(env: &mut Environment, dirs: &mut Directories) {
     env.add_env("XDG_CONFIG_HOME");
     env.add_env("HOME");
 
@@ -263,28 +202,19 @@ fn test_xdg_include_path_fallback(
 
     env::set_var("HOME", tmpdir);
     env::remove_var("XDG_CONFIG_HOME");
-    
+
     let ctx = Context::new(ContextFlags::empty()).unwrap();
     assert!(ctx.num_include_paths() >= 1);
 
-    let context_path = ctx.include_path_get(0)
-        .map(|p| p.into());
+    let context_path = ctx.include_path_get(0).map(|p| p.into());
 
     assert_eq!(context_path, Some(xdg_path));
 
     dirs.unmake_dirs();
     env.restore_env();
-
-
-
 }
 
-
-fn test_include_order(
-    env: &mut Environment,
-    dirs: &mut Directories
-    ) {
-
+fn test_include_order(env: &mut Environment, dirs: &mut Directories) {
     env.add_env("XKB_CONFIG_ROOT");
     env.add_env("XDG_CONFIG_HOME");
     env.add_env("HOME");
@@ -308,27 +238,23 @@ fn test_include_order(
     // $HOME/.xkb is second
     let context_path = ctx.include_path_get(1);
     assert_eq!(context_path.map(|p| p.into()), Some(xkb_home_path));
-    
+
     // CONFIG_ROOT is last
     let context_path = ctx.include_path_get(2);
     assert_eq!(context_path.map(|p| p.into()), Some(xkb_root_path));
 
     dirs.unmake_dirs();
     env.restore_env();
-
 }
 
 #[test]
 fn test_context() {
-
-
     log_init!();
-
 
     let mut context = test_get_context(TestContextFlags::empty()).unwrap();
 
     assert_eq!(context.num_include_paths(), 1);
-    
+
     context.include_path_append("¡NONSENSE!").unwrap_err();
 
     assert_eq!(context.num_include_paths(), 1);
@@ -338,9 +264,11 @@ fn test_context() {
     let atom = context.atom_intern("HELLOjunkjunkjunk".into());
 
     assert!(atom != 0);
-    
-    assert_eq!(context.xkb_atom_text(atom),
-    Some("HELLOjunkjunkjunk".into()));
+
+    assert_eq!(
+        context.xkb_atom_text(atom),
+        Some("HELLOjunkjunkjunk".into())
+    );
 
     let mut env = Environment { envs: vec![] };
     let mut dirs = Directories { dirs: vec![] };
@@ -351,6 +279,4 @@ fn test_context() {
     test_xdg_include_path(&mut env, &mut dirs);
     test_xdg_include_path_fallback(&mut env, &mut dirs);
     test_include_order(&mut env, &mut dirs);
-
-
 }

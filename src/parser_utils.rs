@@ -1,129 +1,154 @@
 // This is some of the content from parser.y
 // also includes parts of scanner.c
 
-use std::sync::{Arc, Mutex};
 
 use crate::atom::Atom;
-use crate::errors::*;
-use crate::xkbcomp::ast::*;
 use crate::context::Context;
+use crate::errors::*;
 use crate::keysyms::keysym_from_name;
+use crate::xkbcomp::ast::*;
 
 use crate::parser::XkbFilesParser;
 
 use xkeysym::Keysym;
 
-use crate::xkbcomp::ast::{Decl,VModDef};
-pub(crate) struct DeclList {
-    pub(crate) decl_list: Vec<Decl>,
-    pub(crate) vmods: Vec<VModDef>
-}
+
+use std::rc::Rc;
+
 
 pub(crate) struct ParserParam<'p> {
     pub(super) ctx: &'p mut Context,
-    pub(crate) rtrn: Option<XkbFile>,
-    pub(crate) more_maps: bool,
-    pub(crate) file_name: String
 }
 
 impl<'p> ParserParam<'p> {
-
     pub(crate) fn atom_intern(&mut self, ident: String) -> Atom {
-
-
         self.ctx.atom_intern(ident)
-
-
     }
+}
 
-
+pub(crate) fn resolve_keysym(name: &str) -> Option<Keysym> {
+    match name.to_lowercase().as_str() {
+        "" => Some(xkeysym::NO_SYMBOL),
+        "any" => Some(xkeysym::NO_SYMBOL),
+        "nosymbol" => Some(xkeysym::NO_SYMBOL),
+        "voidsymbol" => Some(Keysym::VoidSymbol),
+        _ => keysym_from_name(name, 0),
+    }
 }
 
 
-pub(crate) fn resolve_keysym(name: &str) -> Option<Keysym> {
 
-	match name.to_lowercase().as_str() {
-		"" => Some(xkeysym::NO_SYMBOL),
-		"any" => Some(xkeysym::NO_SYMBOL),
-		"nosymbol" => Some(xkeysym::NO_SYMBOL),
-		"voidsymbol" => Some(Keysym::VoidSymbol),
-		_ => keysym_from_name(name, 0)
+use thiserror::Error;
+
+#[derive(Clone,Debug,Error)]
+pub enum XkbFileParseError {
+    
+    #[error("Could not read file {file:?} to string: {error:?}")]
+    CouldNotReadToString{
+        file: std::path::PathBuf,
+        error: Rc<std::io::Error>
+    },
+
+    // TODO: better error handling
+    #[error("Parser encountered invalid token at location: {0:?}")]
+    InvalidToken(()),
+
+    #[error("Parser encountered unexpected token: {token} in range {span_begin:?}..{span_end:?}")]
+    UnrecognizedToken{
+        token: String,
+        span_begin: Location,
+        span_end: Location
+    },
+
+    #[error("Parser encountered extra token: {token} in range {span_begin:?}..{span_end:?}")]
+    ExtraToken{
+        token: String,
+        span_begin: Location,
+        span_end: Location
+    },
+
+    #[error("File ended early at location {0:?}")]
+    UnrecognizedEof(Location),
+
+    #[error("Expected: {0}")]
+    User(&'static str)
+
+}
+
+type Location = ();
+type Token = crate::lexer::Token;
+type Expected = &'static str;
+type ParseError = lalrpop_util::ParseError<
+    Location, Token, Expected>;
+
+impl From<ParseError> for XkbFileParseError {
+
+    fn from(e: ParseError) -> Self {
+
+        use lalrpop_util::ParseError::*;
+        match e {
+            InvalidToken{ location: s } => Self::InvalidToken(s),
+            UnrecognizedToken{
+                token: (span_begin, token, span_end),..} => Self::UnrecognizedToken{
+                token: format!("{:?}", token), span_begin, span_end},
+            ExtraToken{
+                token: (span_begin, token, span_end)
+            } => Self::ExtraToken{
+                token: format!("{:?}",token), span_begin,
+                span_end},
+            UnrecognizedEof{
+                location,..} => Self::UnrecognizedEof(location),
+            User{error} => Self::User(error)
 
         }
 
 
-}
-
-
-pub(crate) fn parse_int(s: &str) -> Result<u32,()> {
-	match s.parse::<u32>() {
-		Ok(val) => Ok(val),
-		Err(_) => Err(())
-	}
-
-}
-
-
-pub(crate) fn parse_float(s: &str) -> Result<f64,()> {
-	match s.parse::<f64>() {
-		Ok(val) => Ok(val),
-		Err(_) => Err(())
-	}
+    }
 
 }
 
 impl XkbFile {
-
     pub(crate) fn parse_string(
         ctx: &mut Context,
         string: String,
         file_name: &str,
         map: Option<&str>,
-    ) -> Result<Option<XkbFile>,KeymapErr> {
-
+    ) -> Result<Option<XkbFile>, XkbFileParseError> {
         let mut parser_param = ParserParam {
             ctx,
-            rtrn: None,
-            more_maps: false,
-            file_name: file_name.into()
         };
 
         let lexer = crate::lexer::Lexer::new(&string);
         let parser = XkbFilesParser::new();
 
-        // TODO:
         // If we got a specific map, we look for it exclusively
         // and return immediately upon finding it.
         // Otherwise we need to get the default map.
         // If we find a map marked as default, we return it
         // immediately. If there are no maps marked as default,
         // we return the first map in the file.
-        
-        let mut first_file = None;
-        
-        for xkb_file in parser.parse(&mut parser_param, lexer)
-                                .map_err(|e| KeymapErr::ParseFailed(e))? {
 
+        let mut first_file = None;
+
+        for xkb_file in parser
+            .parse(&mut parser_param, lexer)?
+            
+        {
             // TODO: this currently skips error'ed files. Is this correct behavior?
             if let Ok(xkb_file) = xkb_file {
                 if let Some(map) = map {
-
                     if xkb_file.name == map {
                         return Ok(Some(xkb_file));
                     } else {
                         continue;
                     }
-                }
-                else {
-
+                } else {
                     if xkb_file.flags.intersects(XkbMapFlags::MAP_IS_DEFAULT) {
                         return Ok(Some(xkb_file));
-
                     } else if first_file.is_none() {
                         first_file = Some(xkb_file);
-                    } 
+                    }
                 }
-
             }
         }
 
@@ -134,35 +159,32 @@ impl XkbFile {
 
             return Ok(Some(first));
         }
-    
 
         Ok(None)
-
     }
 
+    // XkbParseFile in `scanner.c`
     pub(crate) fn parse_file(
         ctx: &mut Context,
         mut file: std::fs::File,
         file_name: &str,
         map: Option<&str>,
-        ) -> Result<Option<Self>, KeymapErr> {
-
+    ) -> Result<Option<Self>, XkbFileParseError> {
         use std::io::prelude::*;
 
         let mut string = String::new();
-        if let Err(e) = file.read_to_string(&mut string) {
+        if let Err(error) = file.read_to_string(&mut string) {
+            log::error!("{:?}: Couldn't read XKB file {}: {}",
+                XkbMessageCode::NoId,
+                file_name, error);
 
-            todo!();
-            return Err(todo!());
+            return Err(XkbFileParseError::CouldNotReadToString{
+                file: file_name.into(),
+                error: Rc::new(error)});
         }
 
         let parsed = Self::parse_string(ctx, string, file_name, map);
-        if let Err(ref e) = parsed {
-            log::debug!("{}: {:?}", file_name, e);
-        }
 
         parsed
-
-
     }
 }

@@ -1,4 +1,3 @@
-
 /* ORIGINAL LICENSE of rulescomp.c:
  * ---------------------------------------------
  * Copyright © 2009 Dan Nicholson
@@ -24,21 +23,17 @@
  * --------------------------------------------
  */
 use crate::log_init;
-use crate::test::*;
 use crate::rust_xkbcommon::*;
-
+use crate::test::*;
 
 use crate::context::Context;
 use crate::errors::*;
-use crate::keysyms::keysym_from_name;
 use crate::keymap::Keymap;
-
+use crate::keysyms::keysym_from_name;
 
 use std::env;
 
 use evdev::Key;
-
-
 
 fn test_rmlvo_va(
     ctx: Context,
@@ -47,25 +42,25 @@ fn test_rmlvo_va(
     layout: Option<&str>,
     variant: Option<&str>,
     options: Option<&str>,
-    args: Vec<(evdev::Key, KeySeqState, Keysym)>)
--> Result<(), TestErr> {
-
+    args: Vec<(evdev::Key, KeySeqState, Keysym)>,
+) -> Result<(), TestErr> {
     let keymap = test_compile_rules(ctx, rules, model, layout, variant, options);
 
     let keymap = match keymap {
         Err(e) => return Err(TestErr::Keymap(e)),
-        Ok(keymap) => keymap };
+        Ok(keymap) => keymap,
+    };
 
-    eprintln!("Compiled '{}' '{}' '{}' '{}' '{}'",
+    eprintln!(
+        "Compiled '{}' '{}' '{}' '{}' '{}'",
         rules.unwrap_or_else(|| ""),
         model.unwrap_or_else(|| ""),
         layout.unwrap_or_else(|| ""),
         variant.unwrap_or_else(|| ""),
-        options.unwrap_or_else(|| ""));
+        options.unwrap_or_else(|| "")
+    );
 
     test_key_seq(&keymap, args)
-
-
 }
 
 fn test_rmlvo(
@@ -75,18 +70,19 @@ fn test_rmlvo(
     layout: &str,
     variant: &str,
     options: &str,
-    args: Vec<(evdev::Key, KeySeqState, Keysym)>)
--> Result<(), TestErr> {
-
-
+    args: Vec<(evdev::Key, KeySeqState, Keysym)>,
+) -> Result<(), TestErr> {
     test_rmlvo_va(
-        ctx,Some(rules),Some(model),
-        Some(layout),Some(variant),
+        ctx,
+        Some(rules),
+        Some(model),
+        Some(layout),
+        Some(variant),
         Some(options),
-        args )?;
+        args,
+    )?;
 
     Ok(())
-
 }
 
 fn test_rmlvo_env(
@@ -96,29 +92,28 @@ fn test_rmlvo_env(
     layout: &str,
     variant: &str,
     options: &str,
-    args: Vec<(evdev::Key, KeySeqState, Keysym)>)
--> Result<(), TestErr> {
-
+    args: Vec<(evdev::Key, KeySeqState, Keysym)>,
+) -> Result<(), TestErr> {
     match rules {
         "" => env::remove_var("XKB_DEFAULT_RULES"),
         _ => env::set_var("XKB_DEFAULT_RULES", rules),
     }
-    
+
     match model {
         "" => env::remove_var("XKB_DEFAULT_MODEL"),
         _ => env::set_var("XKB_DEFAULT_MODEL", model),
     }
-    
+
     match layout {
         "" => env::remove_var("XKB_DEFAULT_LAYOUT"),
         _ => env::set_var("XKB_DEFAULT_LAYOUT", layout),
     }
-    
+
     match variant {
         "" => env::remove_var("XKB_DEFAULT_VARIANT"),
         _ => env::set_var("XKB_DEFAULT_VARIANT", variant),
     }
-    
+
     match options {
         "" => env::remove_var("XKB_DEFAULT_OPTIONS"),
         _ => env::set_var("XKB_DEFAULT_OPTIONS", options),
@@ -129,164 +124,215 @@ fn test_rmlvo_env(
 
 #[test]
 fn rmlvo() {
-
     use KeySeqState::*;
 
     log_init!();
-    
 
     let context = test_get_context(TestContextFlags::ALLOW_ENVIRONMENT_NAMES).unwrap();
 
-    
     test_rmlvo(
-        context.clone(), 
+        context.clone(),
         "evdev",
-        "pc105", 
+        "pc105",
         "us,il,ru,ca",
-        ",,,multix", 
+        ",,,multix",
         "grp:alts_toggle,ctrl:nocaps,compose:rwin",
         vec![
-            (Key::KEY_Q,            Both,   Keysym::q),
-            (Key::KEY_LEFTALT,      Down,   Keysym::Alt_L),
-            (Key::KEY_RIGHTALT,     Down,   Keysym::ISO_Next_Group),
-            (Key::KEY_RIGHTALT,     Up,     Keysym::ISO_Level3_Shift),
-            (Key::KEY_LEFTALT,      Up,     Keysym::Alt_L),
-            (Key::KEY_Q,            Both,   Keysym::slash),
-            (Key::KEY_LEFTSHIFT,    Down,   Keysym::Shift_L),
-(Key::KEY_Q,            Both,   Keysym::Q),
-(Key::KEY_RIGHTMETA,    Both,   Keysym::Multi_key),
-        ]).unwrap();
+            (Key::KEY_Q, Both, Keysym::q),
+            (Key::KEY_LEFTALT, Down, Keysym::Alt_L),
+            (Key::KEY_RIGHTALT, Down, Keysym::ISO_Next_Group),
+            (Key::KEY_RIGHTALT, Up, Keysym::ISO_Level3_Shift),
+            (Key::KEY_LEFTALT, Up, Keysym::Alt_L),
+            (Key::KEY_Q, Both, Keysym::slash),
+            (Key::KEY_LEFTSHIFT, Down, Keysym::Shift_L),
+            (Key::KEY_Q, Both, Keysym::Q),
+            (Key::KEY_RIGHTMETA, Both, Keysym::Multi_key),
+        ],
+    )
+    .unwrap();
 
-
-    test_rmlvo(context.clone(),
-        "evdev", "pc105", "us,in", "",
+    test_rmlvo(
+        context.clone(),
+        "evdev",
+        "pc105",
+        "us,in",
+        "",
         "grp:alts_toggle",
         vec![
-            (Key::KEY_A,            Both,   Keysym::a),
-            (Key::KEY_LEFTALT,      Down,   Keysym::Alt_L),
-            (Key::KEY_RIGHTALT,     Down,   Keysym::ISO_Next_Group),
-            (Key::KEY_RIGHTALT,     Up,     Keysym::ISO_Level3_Shift),
-            (Key::KEY_LEFTALT,      Up,     Keysym::Alt_L),
-            (Key::KEY_A,            Both,   keysym_from_name("U094b", 0).unwrap())
+            (Key::KEY_A, Both, Keysym::a),
+            (Key::KEY_LEFTALT, Down, Keysym::Alt_L),
+            (Key::KEY_RIGHTALT, Down, Keysym::ISO_Next_Group),
+            (Key::KEY_RIGHTALT, Up, Keysym::ISO_Level3_Shift),
+            (Key::KEY_LEFTALT, Up, Keysym::Alt_L),
+            (Key::KEY_A, Both, keysym_from_name("U094b", 0).unwrap()),
+        ],
+    )
+    .unwrap();
 
-    ]).unwrap();
-    
+    test_rmlvo(
+        context.clone(),
+        "evdev",
+        "pc105",
+        "us",
+        "intl",
+        "",
+        vec![(Key::KEY_GRAVE, Both, Keysym::dead_grave)],
+    )
+    .unwrap();
 
-    test_rmlvo(context.clone(),
-        "evdev", "pc105", "us", "intl", "",
-        vec![
-            (Key::KEY_GRAVE,    Both,   Keysym::dead_grave)
-        ]).unwrap();
-    
-    test_rmlvo(context.clone(),
-        "evdev", "evdev", "us", "intl", "grp:alts_toggle",
-        vec![
-            (Key::KEY_GRAVE,    Both,   Keysym::dead_grave)
-        ]).unwrap();
+    test_rmlvo(
+        context.clone(),
+        "evdev",
+        "evdev",
+        "us",
+        "intl",
+        "grp:alts_toggle",
+        vec![(Key::KEY_GRAVE, Both, Keysym::dead_grave)],
+    )
+    .unwrap();
 
     // 20 is not a legal group; make sure this is handled gracefully.
-    test_rmlvo(context.clone(),
-        "evdev", "pc105", "us:20", "", "",
-        vec![
-            (Key::KEY_A,        Both,   Keysym::a)
-        ]).unwrap();
+    test_rmlvo(
+        context.clone(),
+        "evdev",
+        "pc105",
+        "us:20",
+        "",
+        "",
+        vec![(Key::KEY_A, Both, Keysym::a)],
+    )
+    .unwrap();
 
     // Don't choke on missing values in RMLVO.
     // Should just skip them.
     // Currently generates us,us,ca.
-    
-    test_rmlvo(context.clone(),
-        "evdev", "", "us,,ca", "", "grp:alts_toggle",
-        vec![
-            (Key::KEY_A,            Both,   Keysym::a),
-            (Key::KEY_LEFTALT,      Down,   Keysym::Alt_L),
-            (Key::KEY_RIGHTALT,     Down,   Keysym::ISO_Next_Group),
-            (Key::KEY_RIGHTALT,     Up,     Keysym::ISO_Next_Group),
-            (Key::KEY_LEFTALT,      Up,     Keysym::Alt_L),
-            (Key::KEY_LEFTALT,      Down,   Keysym::Alt_L),
-            (Key::KEY_RIGHTALT,     Down,   Keysym::ISO_Next_Group),
-            (Key::KEY_RIGHTALT,     Up,     Keysym::ISO_Level3_Shift),
-            (Key::KEY_LEFTALT,      Up,     Keysym::Alt_L),
-            (Key::KEY_APOSTROPHE,   Both,   Keysym::dead_grave),
 
-        ]).unwrap();
-    
-
-    
-    test_rmlvo(context.clone(),
-        "", "", "", "", "",
+    test_rmlvo(
+        context.clone(),
+        "evdev",
+        "",
+        "us,,ca",
+        "",
+        "grp:alts_toggle",
         vec![
-            (Key::KEY_A,            Both,   Keysym::a)
-        ]).unwrap();
-    
+            (Key::KEY_A, Both, Keysym::a),
+            (Key::KEY_LEFTALT, Down, Keysym::Alt_L),
+            (Key::KEY_RIGHTALT, Down, Keysym::ISO_Next_Group),
+            (Key::KEY_RIGHTALT, Up, Keysym::ISO_Next_Group),
+            (Key::KEY_LEFTALT, Up, Keysym::Alt_L),
+            (Key::KEY_LEFTALT, Down, Keysym::Alt_L),
+            (Key::KEY_RIGHTALT, Down, Keysym::ISO_Next_Group),
+            (Key::KEY_RIGHTALT, Up, Keysym::ISO_Level3_Shift),
+            (Key::KEY_LEFTALT, Up, Keysym::Alt_L),
+            (Key::KEY_APOSTROPHE, Both, Keysym::dead_grave),
+        ],
+    )
+    .unwrap();
+
+    test_rmlvo(
+        context.clone(),
+        "",
+        "",
+        "",
+        "",
+        "",
+        vec![(Key::KEY_A, Both, Keysym::a)],
+    )
+    .unwrap();
+
     // TODO; something is wrong with the include paths here,
     //      so the compilation fails for the wrong reason.
-    test_rmlvo(context.clone(),
-        "does-not-exist", "", "", "", "",
-        vec![
-            (Key::KEY_A,            Both,   Keysym::a)
-        ]).unwrap_err();
+    test_rmlvo(
+        context.clone(),
+        "does-not-exist",
+        "",
+        "",
+        "",
+        "",
+        vec![(Key::KEY_A, Both, Keysym::a)],
+    )
+    .unwrap_err();
 
+    test_rmlvo_env(
+        context.clone(),
+        "evdev",
+        "",
+        "us",
+        "",
+        "",
+        vec![(Key::KEY_A, Both, Keysym::a)],
+    )
+    .unwrap();
 
-    
-    test_rmlvo_env(context.clone(),
-        "evdev", "", "us", "", "",
-        vec![
-            (Key::KEY_A,            Both,   Keysym::a)
-        ]).unwrap();
-
-   
-    test_rmlvo_env(context.clone(),
-        "evdev", "", "us", "", "ctrl:nocaps",
-        vec![
-            (Key::KEY_CAPSLOCK,     Both,   Keysym::Control_L)
-        ]).unwrap();
-    
+    test_rmlvo_env(
+        context.clone(),
+        "evdev",
+        "",
+        "us",
+        "",
+        "ctrl:nocaps",
+        vec![(Key::KEY_CAPSLOCK, Both, Keysym::Control_L)],
+    )
+    .unwrap();
 
     // Ignores multix and generates us,ca.
 
-    test_rmlvo_env(context.clone(),
-        "evdev", "", "us,ca", ",,,multix",
+    test_rmlvo_env(
+        context.clone(),
+        "evdev",
+        "",
+        "us,ca",
+        ",,,multix",
         "grp:alts_toggle",
         vec![
-            (Key::KEY_A,            Both,   Keysym::a),
-            (Key::KEY_LEFTALT,      Down,   Keysym::Alt_L),
-            (Key::KEY_RIGHTALT,     Down,   Keysym::ISO_Next_Group),
-            (Key::KEY_RIGHTALT,     Up,     Keysym::ISO_Level3_Shift),
-            (Key::KEY_LEFTALT,      Up,     Keysym::Alt_L),
-            (Key::KEY_GRAVE,        Up,     Keysym::numbersign)
-        ]).unwrap();
-
+            (Key::KEY_A, Both, Keysym::a),
+            (Key::KEY_LEFTALT, Down, Keysym::Alt_L),
+            (Key::KEY_RIGHTALT, Down, Keysym::ISO_Next_Group),
+            (Key::KEY_RIGHTALT, Up, Keysym::ISO_Level3_Shift),
+            (Key::KEY_LEFTALT, Up, Keysym::Alt_L),
+            (Key::KEY_GRAVE, Up, Keysym::numbersign),
+        ],
+    )
+    .unwrap();
 
     // Ensure a keymap with an empty `xkb_keycodes` compiles fine.
-    test_rmlvo_env(context.clone(),
-        "base", "empty", "empty", "", "",
-        vec![
-            (Key::KEY_A,            Both,   xkeysym::NO_SYMBOL),
-        ]).unwrap();
-
+    test_rmlvo_env(
+        context.clone(),
+        "base",
+        "empty",
+        "empty",
+        "",
+        "",
+        vec![(Key::KEY_A, Both, xkeysym::NO_SYMBOL)],
+    )
+    .unwrap();
 
     // Has an illegal escape sequence, but shouldn't fail.
-    test_rmlvo_env(context.clone(),
-        "evdev", "", "cz", "bksl", "",
-        vec![
-            (Key::KEY_A,            Both,   Keysym::a),
-        ]).unwrap();
+    test_rmlvo_env(
+        context.clone(),
+        "evdev",
+        "",
+        "cz",
+        "bksl",
+        "",
+        vec![(Key::KEY_A, Both, Keysym::a)],
+    )
+    .unwrap();
 
-    
     let context = test_get_context(TestContextFlags::empty()).unwrap();
 
-    test_rmlvo_env(context.clone(),
-        "broken", "but", "ignored", "per", "ctx flags",
-        vec![
-            (Key::KEY_A,            Both,   Keysym::a),
-        ]).unwrap();
+    test_rmlvo_env(
+        context.clone(),
+        "broken",
+        "but",
+        "ignored",
+        "per",
+        "ctx flags",
+        vec![(Key::KEY_A, Both, Keysym::a)],
+    )
+    .unwrap();
 
     // test response to invalid flags.
     let rmlvo = None;
     assert!(Keymap::new_from_names(context, rmlvo, 5453).is_err());
-
-    
 }
-
-
