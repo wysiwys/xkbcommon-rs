@@ -11,7 +11,9 @@ pub(super) fn check_permissions(meta: &Metadata, requested_mode: AccessFlags) ->
     // since the regular permissions only have a read-only bit set.
 
     let permissions = meta.permissions();
-    let actual_mode = permissions.mode().try_into()
+    let actual_mode = permissions
+        .mode()
+        .try_into()
         .expect("Mode requested is negative");
 
     // truncate: leave any unknown bits unset
@@ -22,13 +24,11 @@ pub(super) fn check_permissions(meta: &Metadata, requested_mode: AccessFlags) ->
 
 #[cfg(not(target_os = "linux"))]
 pub(super) fn check_permissions(meta: &Metadata, requested_mode: AccessFlags) -> bool {
-
     todo!()
 }
 
-
 pub(super) fn one_bit_set(x: u32) -> bool {
-
-    x > 0 && (x & (x-1)) == 0
-
+    x > 0 && (x & (x - 1)) == 0
 }
+
+// TODO: `open_file`

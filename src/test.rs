@@ -4,8 +4,10 @@ mod common;
 
 mod context;
 mod filecomp;
+mod fuzz;
 mod keymap;
 mod keyseq;
+mod keysym;
 mod modifiers;
 mod rules_file;
 mod rules_file_includes;

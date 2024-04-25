@@ -1,3 +1,5 @@
 /target
 Cargo.lock
 *.swp
+scripts/
+keysym_map_gen/target

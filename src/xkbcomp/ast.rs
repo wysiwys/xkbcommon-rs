@@ -86,17 +86,13 @@ pub(crate) enum ExprOpType {
     UnaryPlus,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) enum MergeMode {
+    #[default]
     Default,
     Augment,
     Override,
     Replace,
-}
-impl Default for MergeMode {
-    fn default() -> Self {
-        MergeMode::Default
-    }
 }
 
 #[derive(Debug)]
@@ -117,17 +113,7 @@ pub(crate) struct IncludeStmt {
 }
 
 impl IncludeStmt {
-    pub(crate) fn iter_stmts(&self) -> impl Iterator<Item = &IncludeStmtPart> {
-        self.maps.iter()
-    }
-}
-
-impl IncludeStmt {
-    pub(crate) fn create(
-        _: &Context,
-        string: &str,
-        merge: MergeMode,
-    ) -> Self {
+    pub(crate) fn create(_: &Context, string: &str, merge: MergeMode) -> Self {
         let stmt = string.to_owned();
 
         let maps = parse_include_maps(string, merge)
@@ -161,9 +147,9 @@ pub(crate) enum Decl {
     GroupCompat(GroupCompatDef),
     LedMap(LedMapDef),
     LedName(LedNameDef),
-    ShapeDecl,
-    SectionDecl,
-    DoodadDecl,
+    Shape,
+    Section,
+    Doodad,
     Skipped, //e.g. for missing keysyms
 }
 
@@ -183,9 +169,9 @@ impl Decl {
             GroupCompat(_) => "group_compat",
             LedMap(_) => "led_map",
             LedName(_) => "led_name",
-            ShapeDecl => "shape_decl",
-            SectionDecl => "section_decl",
-            DoodadDecl => "doodad_decl",
+            Shape => "shape_decl",
+            Section => "section_decl",
+            Doodad => "doodad_decl",
             Skipped => "skipped", //e.g. for missing keysyms
         }
     }
@@ -221,7 +207,6 @@ pub(crate) enum ExprValueType {
 }
 
 impl ExprDef {
-
     pub(crate) fn op_type(&self) -> ExprOpType {
         use ExprDef::*;
         match self {
@@ -361,7 +346,7 @@ pub(crate) struct ExprFloat {
 }
 impl ExprFloat {
     pub(crate) fn create(_float: f64) -> Result<ExprDef, AstError> {
-        Err(AstError::FloatNotSupported.into())
+        Err(AstError::FloatNotSupported)
     }
 }
 
@@ -475,14 +460,12 @@ pub(crate) struct ExprAction {
     pub(super) op: ExprOpType,
     pub(super) value_type: ExprValueType,
     pub(crate) name: Atom,
-    pub(crate) args: Vec<Box<ExprDef>>,
+    pub(crate) args: Vec<ExprDef>,
 }
 impl ExprAction {
     pub(crate) fn create(name: Atom, args: Vec<ExprDef>) -> Result<ExprDef, AstError> {
         let op = ExprOpType::ActionDecl;
         let value_type = ExprValueType::Unknown;
-
-        let args = args.into_iter().map(|x| Box::new(x)).collect();
 
         Ok(ExprDef::Action(Self {
             op,
@@ -496,7 +479,7 @@ impl ExprAction {
 pub(crate) struct ExprActionList {
     pub(super) op: ExprOpType,
     value_type: ExprValueType,
-    pub(crate) actions: Vec<Box<ExprDef>>,
+    pub(crate) actions: Vec<ExprDef>,
 }
 impl ExprActionList {
     pub(crate) fn create(actions: Vec<ExprDef>) -> Result<ExprDef, AstError> {
@@ -508,12 +491,12 @@ impl ExprActionList {
             .into_iter()
             .map(|x| {
                 if let ExprDef::Action(_) = x {
-                    return Ok(Box::new(x));
+                    Ok(x)
                 } else {
-                    return Err(AstError::MustBeAction.into());
+                    Err(AstError::MustBeAction)
                 }
             })
-            .collect::<Result<Vec<Box<ExprDef>>, AstError>>()?;
+            .collect::<Result<Vec<ExprDef>, AstError>>()?;
 
         Ok(ExprDef::Actions(Self {
             op,
@@ -521,7 +504,6 @@ impl ExprActionList {
             actions,
         }))
     }
-
 }
 
 pub(crate) struct ExprKeysymList {
@@ -613,9 +595,9 @@ pub(crate) struct KeyAliasDef {
     pub(super) real: Atom,
 }
 impl KeyAliasDef {
-    pub(crate) fn create(alias: Atom, real: Atom) -> Result<Self, AstError> {
+    pub(crate) fn create(alias: Atom, real: Atom) -> Self {
         let merge = MergeMode::default();
-        Ok(Self { merge, alias, real })
+        Self { merge, alias, real }
     }
 }
 
@@ -755,7 +737,6 @@ pub(crate) struct XkbFile {
     pub(crate) flags: XkbMapFlags,
 }
 
-
 impl XkbFile {
     pub(crate) fn create(
         file_type: XkbFileType,
@@ -769,15 +750,12 @@ impl XkbFile {
             file_type,
             name: name.unwrap_or_else(|| "(unnamed)".to_owned()),
             files,
-            defs: defs.unwrap_or_else(|| vec![]),
+            defs: defs.unwrap_or_else(Vec::new),
             flags,
         }
     }
 
-    pub(crate) fn from_components(
-        ctx: &mut Context,
-        kkctgs: ComponentNames,
-    ) -> Self {
+    pub(crate) fn from_components(ctx: &mut Context, kkctgs: ComponentNames) -> Self {
         let components = [
             (XkbFileType::Keycodes, kkctgs.keycodes),
             (XkbFileType::Types, kkctgs.types),
@@ -795,19 +773,17 @@ impl XkbFile {
             defs.push(file);
         }
 
-        let file = XkbFile::create(
+        XkbFile::create(
             XkbFileType::Keymap,
             None,
             Some(defs),
             None,
             XkbMapFlags::empty(),
-        );
-
-        file
+        )
     }
 
     pub(crate) fn take_files(&mut self) -> impl Iterator<Item = Self> {
-        self.files.take().unwrap_or(vec![]).into_iter()
+        self.files.take().into_iter().flatten()
     }
 
     pub(crate) fn file_type(&self) -> XkbFileType {

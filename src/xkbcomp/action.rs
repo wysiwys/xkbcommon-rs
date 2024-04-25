@@ -7,11 +7,12 @@ use crate::text::*;
 
 use crate::rust_xkbcommon::*;
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Clone)]
 pub(super) struct ActionsInfo {
-    actions: HashMap<ActionType, Action>,
+    // TODO: replace with array of length _ACTION_TYPE_NUM_ENTRIES
+    actions: BTreeMap<ActionType, Action>,
 }
 
 const CONST_TRUE: ExprDef = ExprDef::Boolean(ExprBoolean::new_true());
@@ -48,7 +49,7 @@ impl ActionsInfo {
     pub(super) fn new() -> Self {
         use ActionType::*;
 
-        let mut actions = HashMap::new();
+        let mut actions = BTreeMap::new();
         actions.insert(
             PtrDefault,
             Action::Dflt(DefaultAction {
@@ -135,9 +136,9 @@ impl Context {
             action
         );
 
-        ReportedError::ActionFieldMismatch{
+        ReportedError::ActionFieldMismatch {
             field: field.clone(),
-            _type: _type.into()
+            _type: _type.into(),
         }
     }
     fn report_illegal(&self, action: &ActionType, field: &ActionField) -> ReportedError {
@@ -150,8 +151,10 @@ impl Context {
             action,
         );
 
-        return ReportedError::ActionFieldNotDefinedForType{
-            field: field.clone(), _type: action.clone()};
+        ReportedError::ActionFieldNotDefinedForType {
+            field: field.clone(),
+            _type: *action,
+        }
     }
     fn report_action_not_array(&self, action: &ActionType, field: &ActionField) -> ReportedError {
         let code = XkbMessageCode::NoId;
@@ -163,8 +166,9 @@ impl Context {
             action,
         );
 
-        ReportedError::ActionNotArray{
-            field: field.clone(), _type: action.clone()
+        ReportedError::ActionNotArray {
+            field: field.clone(),
+            _type: *action,
         }
     }
 }
@@ -182,10 +186,9 @@ fn check_boolean_flag(
         return Err(ctx.report_action_not_array(action, field).into());
     }
 
-    let set = value.resolve_boolean(ctx)
-        .ok_or_else(||
-            ctx.report_mismatch(XkbError::WrongFieldType.into(), action, field, "boolean")
-            )?;
+    let set = value.resolve_boolean(ctx).ok_or_else(|| {
+        ctx.report_mismatch(XkbError::WrongFieldType.into(), action, field, "boolean")
+    })?;
 
     if set {
         *flags_inout |= flag;
@@ -205,15 +208,17 @@ fn check_modifier_field(
     flags_inout: &mut ActionFlags,
 ) -> Result<ModMask, HandleActionError> {
     if array_ndx.is_some() {
-        return Err(ctx.report_action_not_array(action, &ActionField::Modifiers).into());
+        return Err(ctx
+            .report_action_not_array(action, &ActionField::Modifiers)
+            .into());
     }
 
     if value.op_type() == ExprOpType::Ident {
         if let ExprDef::Ident(ref ident) = value {
-            if let Some(val_str) = ctx.xkb_atom_text(ident.ident) {
+            if let Some(val_str) = ctx.atom_text(ident.ident) {
                 let val_str = val_str.to_lowercase();
 
-                if val_str.as_str() == "usemodmapmods" || val_str.as_str() == "modmapmods" {
+                if ["usemodmapmods", "modmapmods"].contains(&val_str.as_str()) {
                     *flags_inout |= ActionFlags::ModsLookupModMap;
                     return Ok(0);
                 }
@@ -223,12 +228,14 @@ fn check_modifier_field(
 
     let mods = value
         .resolve_mod_mask(ctx, ModType::BOTH, mods)
-        .ok_or_else(|| ctx.report_mismatch(
-            XkbError::WrongFieldType.into(),
-            action,
-            &ActionField::Modifiers,
-            "modifier mask",
-        ))?;
+        .ok_or_else(|| {
+            ctx.report_mismatch(
+                XkbError::WrongFieldType.into(),
+                action,
+                &ActionField::Modifiers,
+                "modifier mask",
+            )
+        })?;
 
     *flags_inout &= !ActionFlags::ModsLookupModMap;
 
@@ -253,27 +260,25 @@ fn check_affect_field(
     flags_inout: &mut ActionFlags,
 ) -> Result<(), HandleActionError> {
     if array_ndx.is_some() {
-        return Err(ctx.report_action_not_array(action, &ActionField::Affect).into());
+        return Err(ctx
+            .report_action_not_array(action, &ActionField::Affect)
+            .into());
     }
 
-    let flags = value.resolve_enum(ctx, lock_which)
-        .ok_or_else(|| {
-            ctx.report_mismatch(
-                XkbError::WrongFieldType.into(),
-                action,
-                &ActionField::Affect,
-                "lock,unlock,both,neither",
-            )
-
-            }
-        )?;
+    let flags = value.resolve_enum(ctx, lock_which).ok_or_else(|| {
+        ctx.report_mismatch(
+            XkbError::WrongFieldType.into(),
+            action,
+            &ActionField::Affect,
+            "lock, unlock, both, neither",
+        )
+    })?;
 
     *flags_inout &= !(ActionFlags::LockNoLock | ActionFlags::LockNoUnlock);
 
     *flags_inout |= flags;
 
     Ok(())
-
 }
 
 fn handle_set_latch_lock_mods(
@@ -287,21 +292,19 @@ fn handle_set_latch_lock_mods(
 ) -> Result<(), HandleActionError> {
     if let Action::Mods(action) = action {
         if *field == ActionField::Modifiers {
-            return match check_modifier_field(
+            return check_modifier_field(
                 ctx,
                 mods,
                 action_type,
                 array_ndx,
                 value,
                 &mut action.flags,
-            ) {
-                Err(e) => Err(e.into()),
-                Ok(mods) => {
-                    action.mods.mods = mods;
-                    return Ok(());
-                }
-            };
-        } else if [ActionType::ModSet, ActionType::ModLatch].contains(&action_type)
+            )
+            .map(|mods| {
+                action.mods.mods = mods;
+            });
+        }
+        if [ActionType::ModSet, ActionType::ModLatch].contains(action_type)
             && *field == ActionField::ClearLocks
         {
             return check_boolean_flag(
@@ -312,9 +315,9 @@ fn handle_set_latch_lock_mods(
                 array_ndx,
                 value,
                 &mut action.flags,
-            )
-            .map_err(|e| e.into());
-        } else if *action_type == ActionType::ModLatch && *field == ActionField::LatchToLock {
+            );
+        }
+        if *action_type == ActionType::ModLatch && *field == ActionField::LatchToLock {
             return check_boolean_flag(
                 ctx,
                 action_type,
@@ -323,14 +326,13 @@ fn handle_set_latch_lock_mods(
                 array_ndx,
                 value,
                 &mut action.flags,
-            )
-            .map_err(|e| e.into());
-        } else if *action_type == ActionType::ModLock && *field == ActionField::Affect {
-            return check_affect_field(ctx, action_type, array_ndx, value, &mut action.flags)
-                .map_err(|e| e.into());
+            );
+        }
+        if *action_type == ActionType::ModLock && *field == ActionField::Affect {
+            return check_affect_field(ctx, action_type, array_ndx, value, &mut action.flags);
         }
     }
-    return Err(ctx.report_illegal(action_type, field).into());
+    Err(ctx.report_illegal(action_type, field).into())
 }
 
 fn check_group_field(
@@ -340,46 +342,46 @@ fn check_group_field(
     value: ExprDef,
     flags_inout: &mut ActionFlags,
 ) -> Result<i32, HandleActionError> {
-    let spec;
     let mut flags = flags_inout.clone();
 
     if array_ndx.is_some() {
-        return Err(ctx.report_action_not_array(action, &ActionField::Group).into());
+        return Err(ctx
+            .report_action_not_array(action, &ActionField::Group)
+            .into());
     }
 
     let op = value.op_type();
 
     use ExprOpType::*;
-    match value {
+    let spec = match value {
         ExprDef::Unary(unary) if [Negate, UnaryPlus].contains(&unary.op) => {
             flags &= !ActionFlags::AbsoluteSwitch;
-            spec = *unary.child;
+            *unary.child
         }
         _ => {
             flags |= ActionFlags::AbsoluteSwitch;
-            spec = value;
+            value
         }
-    }
+    };
 
-    let idx = spec.resolve_group(ctx)
-        .ok_or_else(||
-            ctx.report_mismatch(
-                XkbError::UnsupportedGroupIndex.into(),
-                action,
-                &ActionField::Group,
-                "integer (range 1..8)",
-            )
-        )?;
+    let idx = spec.resolve_group(ctx).ok_or_else(|| {
+        ctx.report_mismatch(
+            XkbError::UnsupportedGroupIndex.into(),
+            action,
+            &ActionField::Group,
+            "integer (range 1..8)",
+        )
+    })?;
 
-   
+    let idx = i32::try_from(idx).unwrap();
     let group_rtrn: i32 = match op {
-        ExprOpType::Negate => -1 * i32::try_from(idx).unwrap(),
-        ExprOpType::UnaryPlus => idx.try_into().unwrap(),
-        _ => i32::try_from(idx).unwrap() - 1,
+        ExprOpType::Negate => -idx,
+        ExprOpType::UnaryPlus => idx,
+        _ => idx - 1,
     };
 
     *flags_inout = flags;
-    return Ok(group_rtrn);
+    Ok(group_rtrn)
 }
 
 fn handle_set_latch_lock_group(
@@ -393,13 +395,12 @@ fn handle_set_latch_lock_group(
 ) -> Result<(), HandleActionError> {
     if let Action::Group(act) = action {
         if *field == ActionField::Group {
-            return match check_group_field(ctx, action_type, array_ndx, value, &mut act.flags) {
-                Err(e) => Err(e.into()),
-                Ok(group) => {
+            return check_group_field(ctx, action_type, array_ndx, value, &mut act.flags).map(
+                |group| {
+                    // If group returned, set it as act.group
                     act.group = Some(group);
-                    Ok(())
-                }
-            };
+                },
+            );
         } else if [ActionType::GroupSet, ActionType::GroupLatch].contains(action_type)
             && *field == ActionField::ClearLocks
         {
@@ -411,8 +412,7 @@ fn handle_set_latch_lock_group(
                 array_ndx,
                 value,
                 &mut act.flags,
-            )
-            .map_err(|e| e.into());
+            );
         } else if ActionType::GroupLatch == *action_type && *field == ActionField::LatchToLock {
             return check_boolean_flag(
                 ctx,
@@ -422,12 +422,11 @@ fn handle_set_latch_lock_group(
                 array_ndx,
                 value,
                 &mut act.flags,
-            )
-            .map_err(|e| e.into());
+            );
         }
     }
 
-    return Err(ctx.report_illegal(action_type, field).into());
+    Err(ctx.report_illegal(action_type, field).into())
 }
 
 fn handle_move_ptr(
@@ -447,17 +446,15 @@ fn handle_move_ptr(
             if array_ndx.is_some() {
                 return Err(ctx.report_action_not_array(action_type, field).into());
             }
-            let val = value.resolve_integer(ctx)
-                .ok_or_else(||
-                    ctx
-                    .report_mismatch(
-                        XkbError::WrongFieldType.into(),
-                        action_type,
-                        field,
-                        "integer",
-                    )
-                )?;
-            if let Ok(val) =i16::try_from(val) {
+            let val = value.resolve_integer(ctx).ok_or_else(|| {
+                ctx.report_mismatch(
+                    XkbError::WrongFieldType.into(),
+                    action_type,
+                    field,
+                    "integer",
+                )
+            })?;
+            if let Ok(val) = i16::try_from(val) {
                 if *field == ActionField::X {
                     if absolute {
                         act.flags |= ActionFlags::AbsoluteX;
@@ -481,11 +478,10 @@ fn handle_move_ptr(
                 array_ndx,
                 value,
                 &mut act.flags,
-            )
-            .map_err(|e| e.into());
+            );
         }
     }
-    return Err(ctx.report_illegal(action_type, field).into());
+    Err(ctx.report_illegal(action_type, field).into())
 }
 
 fn handle_ptr_btn(
@@ -503,19 +499,16 @@ fn handle_ptr_btn(
                 return Err(ctx.report_action_not_array(action_type, field).into());
             }
 
-            let btn = value.resolve_button(ctx)
-                .ok_or_else(|| 
-                    ctx
-                        .report_mismatch(
-                            XkbError::WrongFieldType.into(),
-                            action_type,
-                            field,
-                            "integer (range 1..5)",
-                        )
-                )?;
+            let btn = value.resolve_button(ctx).ok_or_else(|| {
+                ctx.report_mismatch(
+                    XkbError::WrongFieldType.into(),
+                    action_type,
+                    field,
+                    "integer (range 1..5)",
+                )
+            })?;
 
-            // TODO: is this check correct?
-            if btn < 0 || btn > 5 {
+            if !(0..=5).contains(&btn) {
                 let err = XkbMessageCode::NoId;
 
                 log::error!(
@@ -531,26 +524,21 @@ fn handle_ptr_btn(
             act.button = Some(btn.try_into().unwrap());
             return Ok(());
         } else if *field == ActionField::Affect && *action_type == ActionType::PtrLock {
-            return check_affect_field(ctx, action_type, array_ndx, value, &mut act.flags)
-                .map_err(|e| e.into());
+            return check_affect_field(ctx, action_type, array_ndx, value, &mut act.flags);
         } else if *field == ActionField::Count {
             if array_ndx.is_some() {
                 return Err(ctx.report_action_not_array(action_type, field).into());
             }
-            let val = value.resolve_integer(ctx)
-                .ok_or_else(|| 
-                        ctx
-                        .report_mismatch(
-                            XkbError::WrongFieldType.into(),
-                            action_type,
-                            field,
-                            "integer",
-                        )
-                )?;
+            let val = value.resolve_integer(ctx).ok_or_else(|| {
+                ctx.report_mismatch(
+                    XkbError::WrongFieldType.into(),
+                    action_type,
+                    field,
+                    "integer",
+                )
+            })?;
 
-            act.count = val.try_into()
-                .map_err(|err| {
-
+            act.count = val.try_into().map_err(|err| {
                 log::error!(
                     "{:?}: The count field must have a value in the range 0.255;
                         Illegal count {:?} ignored",
@@ -565,7 +553,7 @@ fn handle_ptr_btn(
         }
     }
 
-    return Err(ctx.report_illegal(action_type, field).into());
+    Err(ctx.report_illegal(action_type, field).into())
 }
 
 fn ptr_dflts(s: &str) -> Option<bool> {
@@ -592,17 +580,17 @@ fn handle_set_ptr_dflt(
                 return Err(ctx.report_action_not_array(action_type, field).into());
             }
 
-            return match value
-                .resolve_enum(ctx, ptr_dflts) {
-                    Some(true) => Ok(()),
-                    _ => Err(ctx
+            return match value.resolve_enum(ctx, ptr_dflts) {
+                Some(true) => Ok(()),
+                _ => Err(ctx
                     .report_mismatch(
                         XkbError::WrongFieldType.into(),
                         action_type,
                         field,
-                        "pointer component").into())
+                        "pointer component",
+                    )
+                    .into()),
             };
-
         } else if *field == ActionField::Button || *field == ActionField::Value {
             if array_ndx.is_some() {
                 return Err(ctx.report_action_not_array(action_type, field).into());
@@ -621,19 +609,16 @@ fn handle_set_ptr_dflt(
                 }
             };
 
-            let btn = button.resolve_button(ctx)
-                .ok_or_else(|| 
-                    ctx
-                    .report_mismatch(
-                        XkbError::WrongFieldType.into(),
-                        action_type,
-                        field,
-                        "integer (range 1..5)",
-                    )
-                )?;
+            let btn = button.resolve_button(ctx).ok_or_else(|| {
+                ctx.report_mismatch(
+                    XkbError::WrongFieldType.into(),
+                    action_type,
+                    field,
+                    "integer (range 1..5)",
+                )
+            })?;
 
-
-            if btn < 1 || btn > 5 {
+            if !(1..=5).contains(&btn) {
                 let err = XkbMessageCode::NoId;
 
                 log::error!(
@@ -658,9 +643,10 @@ fn handle_set_ptr_dflt(
                 return Err(HandleActionError::DefaultPtrBtnCannotBeZero);
             }
 
+            let btn = i8::try_from(btn).unwrap();
             act.value = match op {
-                Negate => Some(-1 * i8::try_from(btn).unwrap()),
-                _ => Some(btn.try_into().unwrap()),
+                Negate => Some(-btn),
+                _ => Some(btn),
             };
             return Ok(());
         }
@@ -697,38 +683,34 @@ fn handle_switch_screen(
                 }
             };
 
-            let val = scrn.resolve_integer(ctx)
-                .ok_or_else(||
-
-                    ctx
-                    .report_mismatch(
-                        XkbError::WrongFieldType.into(),
-                        action_type,
-                        field,
-                        "integer (0..255)",
-                    )
-                )?;
+            let val = scrn.resolve_integer(ctx).ok_or_else(|| {
+                ctx.report_mismatch(
+                    XkbError::WrongFieldType.into(),
+                    action_type,
+                    field,
+                    "integer (0..255)",
+                )
+            })?;
 
             // TODO: i8 or i16??
             // Report this as a bug if necessary
             let val: i8 = match val.try_into() {
                 Ok(val) if val >= 1 => val,
-                _ =>  {
-                let err = XkbMessageCode::NoId;
-                log::error!(
-                    "{:?}: Screen index must be in the range 1..255;
+                _ => {
+                    let err = XkbMessageCode::NoId;
+                    log::error!(
+                        "{:?}: Screen index must be in the range 1..255;
                         Illegal screen value {:?} ignored.",
-                    err,
-                    val
-                );
+                        err,
+                        val
+                    );
 
-                return Err(HandleActionError::IllegalScreenIndex(val));
+                    return Err(HandleActionError::IllegalScreenIndex(val));
                 }
             };
 
-
             act.screen = match op {
-                Negate => Some(-1 * val),
+                Negate => Some(-val),
                 _ => Some(val),
             };
 
@@ -742,12 +724,11 @@ fn handle_switch_screen(
                 array_ndx,
                 value,
                 &mut act.flags,
-            )
-            .map_err(|e| e.into());
+            );
         }
     }
 
-    return Err(ctx.report_illegal(action_type, field).into());
+    Err(ctx.report_illegal(action_type, field).into())
 }
 
 fn handle_set_lock_controls(
@@ -765,33 +746,29 @@ fn handle_set_lock_controls(
                 return Err(ctx.report_action_not_array(action_type, field).into());
             }
 
-            let mask = value.resolve_mask(ctx, |ident, _, ctx| {
-                let s = ctx.xkb_atom_text(ident)?;
-                lookup_key(&CTRL_MASK_NAMES, s).copied()
-            });
+            let mask = value
+                .resolve_mask(ctx, |ident, _, ctx| {
+                    let s = ctx.atom_text(ident)?;
+                    lookup_key(&CTRL_MASK_NAMES, s).copied()
+                })
+                .ok_or_else(|| {
+                    ctx.report_mismatch(
+                        XkbError::WrongFieldType.into(),
+                        action_type,
+                        field,
+                        "controls mask",
+                    )
+                })?;
 
-            act.ctrls = match mask {
-                None => {
-                    return Err(ctx
-                        .report_mismatch(
-                            XkbError::WrongFieldType.into(),
-                            action_type,
-                            field,
-                            "controls mask",
-                        )
-                        .into())
-                }
-                Some(mask) => mask,
-            };
+            act.ctrls = mask;
 
             return Ok(());
         } else if *field == ActionField::Affect {
-            return check_affect_field(ctx, action_type, array_ndx, value, &mut act.flags)
-                .map_err(|e| e.into());
+            return check_affect_field(ctx, action_type, array_ndx, value, &mut act.flags);
         }
     }
 
-    return Err(ctx.report_illegal(action_type, field).into());
+    Err(ctx.report_illegal(action_type, field).into())
 }
 
 fn handle_private(
@@ -823,18 +800,16 @@ fn handle_private(
                 }
             };
 
-            let _type: u8 = _type.try_into()
-                .map_err(|_| {
-
-                    let err = XkbMessageCode::NoId;
-                    log::error!(
-                        "{:?}: Private action type must be in the range 
+            let _type: u8 = _type.try_into().map_err(|_| {
+                let err = XkbMessageCode::NoId;
+                log::error!(
+                    "{:?}: Private action type must be in the range 
                             0..255; Illegal type {:?} ignored",
-                        err,
-                        _type
-                    );
+                    err,
+                    _type
+                );
 
-                    HandleActionError::PrivateActionTypeNotU8(_type)
+                HandleActionError::PrivateActionTypeNotU8(_type)
             })?;
             let _type: ActionType = _type.into();
             if _type < ActionType::Private {
@@ -864,11 +839,10 @@ fn handle_private(
                     }
                 };
 
-                let s = ctx.xkb_atom_text(val)
-                    .unwrap_or_else(|| "");
+                let s = ctx.xkb_atom_text(val);
 
                 let data_size = std::mem::size_of::<ActionData>();
-                if s.len() < 1 || s.len() > data_size {
+                if s.is_empty() || s.len() > data_size {
                     let err = XkbMessageCode::NoId;
                     log::warn!(
                         "{:?}: A private action has {} data bytes; 
@@ -883,8 +857,7 @@ fn handle_private(
                 return Ok(());
             } else {
                 let ndx = array_ndx
-                    .map(|i| i.resolve_integer(ctx))
-                    .flatten()
+                    .and_then(|i| i.resolve_integer(ctx))
                     .ok_or_else(|| {
                         let err = XkbMessageCode::NoId;
                         log::error!(
@@ -906,9 +879,10 @@ fn handle_private(
                             ACTION_DATA_LEN,
                             ndx
                         );
-                        return Err(HandleActionError::PrivateActionExceedMaxIndex{
+                        return Err(HandleActionError::PrivateActionExceedMaxIndex {
                             max: ACTION_DATA_LEN,
-                            index: ndx});
+                            index: ndx,
+                        });
                     }
                 };
 
@@ -946,7 +920,7 @@ fn handle_private(
         }
     }
 
-    return Err(ctx.report_illegal(&ActionType::None, field).into());
+    Err(ctx.report_illegal(&ActionType::None, field).into())
 }
 
 impl Action {
@@ -962,14 +936,14 @@ impl Action {
         use ActionType::*;
         match action_type {
             None => Ok(()),
-            e if [ModSet, ModLatch, ModLock].contains(&e) => {
+            e if [ModSet, ModLatch, ModLock].contains(e) => {
                 handle_set_latch_lock_mods(ctx, mods, self, action_type, field, array_ndx, value)
             }
-            e if [GroupSet, GroupLatch, GroupLock].contains(&e) => {
+            e if [GroupSet, GroupLatch, GroupLock].contains(e) => {
                 handle_set_latch_lock_group(ctx, mods, self, action_type, field, array_ndx, value)
             }
             PtrMove => handle_move_ptr(ctx, mods, self, action_type, field, array_ndx, value),
-            e if [PtrButton, PtrLock].contains(&e) => {
+            e if [PtrButton, PtrLock].contains(e) => {
                 handle_ptr_btn(ctx, mods, self, action_type, field, array_ndx, value)
             }
             PtrDefault => {
@@ -977,7 +951,7 @@ impl Action {
             }
             Terminate => Ok(()),
             SwitchVT => handle_switch_screen(ctx, mods, self, action_type, field, array_ndx, value),
-            e if [CtrlSet, CtrlLock].contains(&e) => {
+            e if [CtrlSet, CtrlLock].contains(e) => {
                 handle_set_lock_controls(ctx, mods, self, action_type, field, array_ndx, value)
             }
             Private => handle_private(ctx, mods, self, action_type, field, array_ndx, value),
@@ -991,99 +965,98 @@ impl ActionsInfo {
         ctx: &Context,
         mods: &ModSet,
         def: ExprDef,
-    ) -> Result<Option<Action>, HandleActionError> {
-        if def.op_type() == ExprOpType::ActionDecl {
-            if let ExprDef::Action(def) = def {
-                let name = match ctx.xkb_atom_text(def.name) {
-                    Some(s) => s,
-                    None => "".into(),
-                };
+    ) -> Result<Action, HandleActionError> {
+        let def = match def {
+            ExprDef::Action(def) if def.op == ExprOpType::ActionDecl => def,
+            _ => {
+                let err = XkbMessageCode::NoId;
+                log::error!(
+                    "{:?}: Expected an action definition, found {:?}",
+                    err,
+                    def.op_type()
+                );
 
-                let handler_type = match lookup_key(&ACTION_TYPE_NAMES, name) {
-                    Some(h) if *h != ActionType::None => h,
-                    Some(_) => return Ok(None), //TODO: is this correct?
-                    None => {
-                        let err = XkbMessageCode::NoId;
-                        log::error!("{:?}: Unknown action {}", err, name);
-                        return Err(HandleActionError::UnknownAction(name.into()));
-                    }
-                };
-
-                // Get the default values for this action type
-
-                let mut action: Action = match self.actions.get(handler_type) {
-                    Some(action) => action.clone(), //already exists
-                    None => {
-                        let new_action = Action::empty_from(*handler_type);
-                        self.actions.insert(*handler_type, new_action);
-                        self.actions.get(handler_type).unwrap().clone()
-                    }
-                };
-
-                // Now change the action properties as specified
-                // for this particular instance, e.g. "modifers"
-                // and "clearLocks" in:
-                //  SetMods(modifiers=Alt,clearLocks);
-
-                for arg in def.args {
-                    let field;
-                    let value;
-                    let op = arg.op_type();
-
-                    use ExprOpType::*;
-                    match *arg {
-                        ExprDef::Binary(binary) if binary.op == Assign => {
-                            field = *binary.left;
-                            value = *binary.right;
-                        }
-                        ExprDef::Unary(unary) if [Not, Invert].contains(&op) => {
-                            field = *unary.child;
-                            value = CONST_FALSE;
-                        }
-                        arg => {
-                            field = arg;
-                            value = CONST_TRUE;
-                        }
-                    }
-
-                    let lhs = field.resolve_lhs(ctx)
-                        .ok_or_else(|| HandleActionError::CouldNotResolveLhs)?;
-
-                    if let Some(elem) = lhs.elem {
-                        let err = XkbMessageCode::NoId;
-                        log::error!(
-                            "{:?}: Cannot change defaults
-                        in an action definition; Ignoring attempts
-                        to change {}.{}",
-                            err,
-                            elem,
-                            lhs.field
-                        );
-                        return Err(HandleActionError::CannotChangeDefaults);
-                    }
-
-                    let field_ndx = FIELD_STRINGS.get(&lhs.field.to_lowercase())
-                    .ok_or_else(|| {
-                            let err = XkbMessageCode::NoId;
-                            log::error!("{:?}: Unknown field name {}", err, lhs.field);
-                            HandleActionError::UnknownFieldName(lhs.field)
-                        })?;
-
-                    action.handle(ctx, mods, handler_type, field_ndx, lhs.index, value)?;
-                }
-
-                return Ok(Some(action));
+                return Err(HandleActionError::NotAnActionDefinition(def.op_type()));
             }
+        };
+        let name = ctx.xkb_atom_text(def.name);
+
+        let handler_type = match lookup_key(&ACTION_TYPE_NAMES, name) {
+            Some(h) if *h != ActionType::None => h,
+            Some(_) => return Ok(Action::None), //TODO: is this correct?
+            None => {
+                let err = XkbMessageCode::NoId;
+                log::error!("{:?}: Unknown action {}", err, name);
+                return Err(HandleActionError::UnknownAction(name.into()));
+            }
+        };
+
+        // Get the default values for this action type
+        // Create if does not exist yet
+        let mut action: Action = match self.actions.get(handler_type) {
+            Some(action) => action.clone(), //already exists
+            None => {
+                let new_action = Action::empty_from(*handler_type);
+                self.actions.insert(*handler_type, new_action);
+                self.actions[handler_type].clone()
+            }
+        };
+
+        // Now change the action properties as specified
+        // for this particular instance, e.g. "modifers"
+        // and "clearLocks" in:
+        //  SetMods(modifiers=Alt,clearLocks);
+
+        for arg in def.args {
+            let field;
+            let value;
+            let op = arg.op_type();
+
+            use ExprOpType::*;
+            match arg {
+                ExprDef::Binary(binary) if binary.op == Assign => {
+                    field = *binary.left;
+                    value = *binary.right;
+                }
+                ExprDef::Unary(unary) if [Not, Invert].contains(&op) => {
+                    field = *unary.child;
+                    value = CONST_FALSE;
+                }
+                arg => {
+                    field = arg;
+                    value = CONST_TRUE;
+                }
+            }
+
+            let lhs = field
+                .resolve_lhs(ctx)
+                .ok_or(HandleActionError::CouldNotResolveLhs)?;
+
+            if let Some(elem) = lhs.elem {
+                let err = XkbError::GlobalDefaultsWrongScope;
+                log::error!(
+                    "{:?}: Cannot change defaults
+                        in an action definition; Ignoring attempts
+                        to change \"{}.{}\"",
+                    err,
+                    elem,
+                    lhs.field
+                );
+                return Err(HandleActionError::CannotChangeDefaults);
+            }
+
+            let field_ndx = FIELD_STRINGS
+                .get(&lhs.field.to_lowercase())
+                .ok_or_else(|| {
+                    let err = XkbMessageCode::NoId;
+                    log::error!("{:?}: Unknown field name {}", err, lhs.field);
+                    HandleActionError::UnknownFieldName(lhs.field)
+                })?;
+
+            action.handle(ctx, mods, handler_type, field_ndx, lhs.index, value)?;
         }
 
-        let err = XkbMessageCode::NoId;
-        log::error!(
-            "{:?}: Expected an action definition, found {:?}",
-            err,
-            def.op_type()
-        );
-
-        Err(HandleActionError::NotAnActionDefinition(def.op_type()))
+        Ok(action)
     }
 
     pub(super) fn set_action_field(
@@ -1095,22 +1068,19 @@ impl ActionsInfo {
         array_ndx: Option<ExprDef>,
         value: ExprDef,
     ) -> Result<(), HandleActionError> {
-        // TODO: replace errors?
+        let elem = elem.ok_or(HandleActionError::ActionTypeMissing)?;
 
-        let elem = elem.ok_or_else(|| HandleActionError::ActionTypeMissing)?;
+        let action_type =
+            lookup_key(&ACTION_TYPE_NAMES, &elem).ok_or(HandleActionError::UnknownAction(elem))?;
 
-        let action_type = lookup_key(&ACTION_TYPE_NAMES, &elem)
-            .ok_or_else(|| HandleActionError::UnknownAction(elem))?;
-
-        let action_field = FIELD_STRINGS.get(&field.to_lowercase())
-            .ok_or_else(|| {
-                log::error!(
-                    "{:?}: {:?} is not a legal field name",
-                    XkbMessageCode::NoId,
-                    field
-                );
-                HandleActionError::IllegalFieldName(field.into())
-            })?;
+        let action_field = FIELD_STRINGS.get(&field.to_lowercase()).ok_or_else(|| {
+            log::error!(
+                "{:?}: {:?} is not a legal field name",
+                XkbMessageCode::NoId,
+                field
+            );
+            HandleActionError::IllegalFieldName(field.into())
+        })?;
 
         let action = match self.actions.get_mut(action_type) {
             Some(a) => a,
@@ -1122,6 +1092,6 @@ impl ActionsInfo {
             }
         };
 
-        return action.handle(ctx, mods, action_type, action_field, array_ndx, value);
+        action.handle(ctx, mods, action_type, action_field, array_ndx, value)
     }
 }

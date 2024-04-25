@@ -27,7 +27,6 @@
 use crate::log_init;
 use crate::test::*;
 
-
 use std::env;
 
 use super::rules_file::*;
@@ -139,4 +138,21 @@ fn test_rules_file_includes() {
     };
 
     assert!(test_rules(&mut ctx, test6));
+
+    let test7 = TestData {
+        rules: "inc-no-newline",
+        model: "",
+        layout: "",
+        variant: "",
+        options: "",
+
+        keycodes: "",
+        types: "",
+        compat: "",
+        symbols: "",
+
+        should_fail: true,
+    };
+
+    assert!(test_rules(&mut ctx, test7));
 }

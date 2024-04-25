@@ -1,5 +1,4 @@
 use super::ast::*;
-use super::include::process_include_file;
 use crate::atom::Atom;
 use crate::context::Context;
 use crate::keymap::{KeyType, KeyTypeEntry, KeymapBuilder, ModSet, ModType, Mods};
@@ -44,7 +43,7 @@ impl Context {
         self.mod_mask_text(&info.mods, entry.mods.mods)
     }
 
-    fn type_txt<'a>(&'a self, _type: &KeyTypeInfo) -> Option<&'a str> {
+    fn type_txt<'a>(&'a self, _type: &KeyTypeInfo) -> &'a str {
         self.xkb_atom_text(_type.name)
     }
 
@@ -52,12 +51,8 @@ impl Context {
         Some(self.mod_mask_text(&info.mods, _type.mods))
     }
 
-    fn report_type_should_be_array(
-        &self,
-        _type: &KeyTypeInfo,
-        field: &str,
-    ) -> ReportedError {
-        self.report_should_be_array("key type", field, &self.type_txt(_type).unwrap_or(""))
+    fn report_type_should_be_array(&self, _type: &KeyTypeInfo, field: &str) -> ReportedError {
+        self.report_should_be_array("key type", field, self.type_txt(_type))
     }
 
     fn report_type_bad_type(
@@ -67,13 +62,7 @@ impl Context {
         field: &str,
         wanted: &str,
     ) -> ReportedError {
-        self.report_bad_type(
-            code.into(),
-            "key type",
-            field,
-            &self.type_txt(_type).unwrap_or(""),
-            wanted,
-        )
+        self.report_bad_type(code.into(), "key type", field, self.type_txt(_type), wanted)
     }
 }
 
@@ -89,35 +78,24 @@ impl KeyTypesInfo {
         }
     }
 
-    fn find_matching_key_type<'s>(&'s mut self, name: Atom) -> Option<&'s mut KeyTypeInfo> {
-        for old in self.types.iter_mut() {
-            if old.name == name {
-                return Some(old);
-            }
-        }
-
-        None
+    fn find_matching_key_type(&mut self, name: Atom) -> Option<&mut KeyTypeInfo> {
+        self.types.iter_mut().find(|old| old.name == name)
     }
 
-    fn add_keytype(
+    fn add_key_type(
         &mut self,
         ctx: &Context,
         new: KeyTypeInfo,
         same_file: bool,
     ) -> Result<(), CompileTypesError> {
-
         let verbosity = ctx.get_log_verbosity();
 
         let old = self.find_matching_key_type(new.name);
 
         if let Some(old) = old {
-            if new.merge == MergeMode::Replace || new.merge == MergeMode::Override {
-
-
-                if (same_file && verbosity > 0)
-                    || verbosity > 9 {
-
-                        log::warn!("{:?}: Multiple definitions of the {:?} key type; Earlier definition ignored",
+            if [MergeMode::Replace, MergeMode::Override].contains(&new.merge) {
+                if (same_file && verbosity > 0) || verbosity > 9 {
+                    log::warn!("{:?}: Multiple definitions of the {:?} key type; Earlier definition ignored",
                             XkbWarning::ConflictingKeyTypeDefinitions,
                             ctx.xkb_atom_text(new.name));
                 }
@@ -127,24 +105,29 @@ impl KeyTypesInfo {
             }
 
             if same_file {
-                log::warn!("{:?}: Multiple definitions of the {:?} key type; Later definition ignored",
+                log::warn!(
+                    "{:?}: Multiple definitions of the {:?} key type; Later definition ignored",
                     XkbWarning::ConflictingKeyTypeDefinitions,
                     ctx.xkb_atom_text(new.name)
-                    );
+                );
             }
 
             return Ok(());
         }
         self.types.push(new);
-        return Ok(());
+        Ok(())
     }
 
-    fn merge_included_key_types(&mut self, ctx: &Context, mut from: KeyTypesInfo, merge: MergeMode) {
-        if from.errors.len() > 0 {
+    fn merge_included_key_types(
+        &mut self,
+        ctx: &Context,
+        mut from: KeyTypesInfo,
+        merge: MergeMode,
+    ) {
+        if !from.errors.is_empty() {
             self.errors.append(&mut from.errors);
             return;
-        }
-        else if let Some(err) = from.unrecoverable_error {
+        } else if let Some(err) = from.unrecoverable_error {
             self.unrecoverable_error = Some(err);
             return;
         }
@@ -163,7 +146,7 @@ impl KeyTypesInfo {
                     MergeMode::Default => _type.merge,
                     _ => merge,
                 };
-                if let Err(e) = self.add_keytype(ctx, _type, false) {
+                if let Err(e) = self.add_key_type(ctx, _type, false) {
                     self.errors.push(e);
                 }
             }
@@ -175,24 +158,22 @@ impl KeyTypesInfo {
         ctx: &mut Context,
         include: IncludeStmt,
     ) -> Result<(), CompileTypesError> {
-
-        /*
         if ctx.exceeds_include_max_depth(self.include_depth) {
-            let err = todo!();
-            self.unrecoverable_error = Some(err);
+            let err = CompileTypesError::ExceedsIncludeMaxDepth;
+            self.unrecoverable_error = Some(err.clone());
             return Err(err);
         }
-        */
 
         let mut included = KeyTypesInfo::new(0, self.mods.clone());
 
         for stmt in include.maps {
-            let file = process_include_file(ctx, &stmt, XkbFileType::Types)
-            .map_err(|e| {
-                let e: CompileTypesError = e.into();
-                self.unrecoverable_error = Some(e.clone());
-                e
-            })?;
+            let file = ctx
+                .process_include_file(&stmt, XkbFileType::Types)
+                .map_err(|e| {
+                    let e: CompileTypesError = e.into();
+                    self.unrecoverable_error = Some(e.clone());
+                    e
+                })?;
 
             let mut next_incl = KeyTypesInfo::new(self.include_depth + 1, included.mods.clone());
 
@@ -203,12 +184,11 @@ impl KeyTypesInfo {
 
         self.merge_included_key_types(ctx, included, include.merge);
 
-
         // error handling
         if let Some(err) = self.unrecoverable_error.as_ref() {
             Err(err.clone())
-        } else if self.errors.len() > 0 {
-            Err(CompileTypesError::MultipleErrors(Box::new(self.errors.clone())))
+        } else if !self.errors.is_empty() {
+            Err(CompileTypesError::MultipleErrors(self.errors.clone()))
         } else {
             Ok(())
         }
@@ -237,7 +217,6 @@ impl KeyTypesInfo {
 
             })?;
 
-
         if _type.defined.intersects(TypeField::Mask) {
             log::warn!(
                 "Multiple modifier mask definitions for key type {:?}; using {:?}, ignoring {:?}",
@@ -251,14 +230,11 @@ impl KeyTypesInfo {
         Ok(())
     }
 
-    fn find_matching_map_entry<'c>(&self, _type: &'c KeyTypeInfo, mods: &ModMask) -> Option<usize> {
-        for (i, entry) in _type.entries.iter().enumerate() {
-            if entry.mods.mods == *mods {
-                return Some(i);
-            }
-        }
-
-        None
+    fn find_matching_map_entry(&self, _type: &KeyTypeInfo, mods: &ModMask) -> Option<usize> {
+        _type
+            .entries
+            .iter()
+            .position(|entry| entry.mods.mods == *mods)
     }
 
     fn add_map_entry(
@@ -269,8 +245,6 @@ impl KeyTypesInfo {
         clobber: bool,
         report: bool,
     ) -> Result<(), CompileTypesError> {
-
-
         let type_txt = ctx.type_txt(_type);
         let old = self.find_matching_map_entry(_type, &new.mods.mods);
         if let Some(old_idx) = old {
@@ -333,21 +307,17 @@ impl KeyTypesInfo {
             preserve: Mods { mods: 0, mask: 0 },
         };
 
-        let array_ndx = array_ndx.ok_or_else(||
-            ctx.report_type_should_be_array(_type, "map entry")
-        )?;
-
-        let mods = array_ndx.resolve_mod_mask(ctx, ModType::BOTH, &self.mods)
-            .ok_or_else(||
-            ctx.report_type_bad_type(
-                    XkbError::UnsupportedModifierMask.into(),
+        entry.mods.mods = array_ndx
+            .ok_or_else(|| ctx.report_type_should_be_array(_type, "map entry"))?
+            .resolve_mod_mask(ctx, ModType::BOTH, &self.mods)
+            .ok_or_else(|| {
+                ctx.report_type_bad_type(
+                    XkbError::UnsupportedModifierMask,
                     _type,
                     "map entry",
                     "modifier mask",
                 )
-        )?;
-
-        entry.mods.mods = mods;
+            })?;
 
         if (entry.mods.mods & !_type.mods) > 0 {
             log::warn!(
@@ -371,9 +341,7 @@ impl KeyTypesInfo {
                 CompileTypesError::UnsupportedShiftLevel
             })?;
 
-        entry.preserve.mods = 0;
-
-        return self.add_map_entry(ctx, _type, entry, true, true);
+        self.add_map_entry(ctx, _type, entry, true, true)
     }
 
     fn add_preserve(
@@ -389,13 +357,13 @@ impl KeyTypesInfo {
                 continue;
             }
             // map exists without previous preserve
-            else if entry.preserve.mods == 0 {
+            if entry.preserve.mods == 0 {
                 entry.preserve.mods = preserve_mods;
                 return Ok(());
             }
             // map exists with same preserve;
             // do nothing.
-            else if entry.preserve.mods == preserve_mods {
+            if entry.preserve.mods == preserve_mods {
                 log::warn!(
                     "{:?}: Identical definitions for preserve[{:?}] in {:?}; Ignored",
                     XkbWarning::DuplicateEntry,
@@ -405,6 +373,7 @@ impl KeyTypesInfo {
                 return Ok(());
             }
 
+            // Map exists with different preserve; latter wins.
             log::warn!(
                 "{:?}: Multiple definitions for preserve[{:?}] in {:?}; Using {:?}, ignoring {:?}",
                 XkbWarning::ConflictingKeyTypePreserveEntries,
@@ -443,27 +412,21 @@ impl KeyTypesInfo {
         array_ndx: Option<ExprDef>,
         value: ExprDef,
     ) -> Result<(), CompileTypesError> {
-        
-        let array_ndx = array_ndx.ok_or_else( ||
-            ctx.report_type_should_be_array(_type, "preserve entry")
-        )?;
-
         let mut mods = array_ndx
-            .resolve_mod_mask(
-                ctx, ModType::BOTH, &self.mods)
-            .ok_or_else(||
-
+            .ok_or_else(|| ctx.report_type_should_be_array(_type, "preserve entry"))?
+            .resolve_mod_mask(ctx, ModType::BOTH, &self.mods)
+            .ok_or_else(|| {
                 ctx.report_type_bad_type(
-                    XkbError::UnsupportedModifierMask.into(),
+                    XkbError::UnsupportedModifierMask,
                     _type,
                     "preserve entry",
                     "modifier mask",
                 )
-            )?;
+            })?;
 
         if (mods & !_type.mods) != 0 {
             let before = ctx.mod_mask_text(&self.mods, mods);
-            mods = mods & _type.mods;
+            mods &= _type.mods;
             let after = ctx.mod_mask_text(&self.mods, mods);
 
             log::warn!(
@@ -472,7 +435,7 @@ impl KeyTypesInfo {
                 ctx.type_txt(_type), before, after);
         }
 
-        let mut preserve_mods 
+        let mut preserve_mods
             = value.resolve_mod_mask(ctx, ModType::BOTH, &self.mods)
             .ok_or_else(|| {
                 log::error!(
@@ -485,10 +448,9 @@ impl KeyTypesInfo {
 
         })?;
 
-
         if (preserve_mods & !mods) != 0 {
             let before = ctx.mod_mask_text(&self.mods, preserve_mods);
-            preserve_mods = preserve_mods & mods;
+            preserve_mods &= mods;
 
             let after = ctx.mod_mask_text(&self.mods, preserve_mods);
 
@@ -502,7 +464,7 @@ impl KeyTypesInfo {
             );
         }
 
-        return self.add_preserve(ctx, _type, mods, preserve_mods);
+        self.add_preserve(ctx, _type, mods, preserve_mods)
     }
 
     fn add_level_name(
@@ -513,6 +475,8 @@ impl KeyTypesInfo {
         name: Atom,
         clobber: bool,
     ) -> Result<(), CompileTypesError> {
+        // See end of function for new name
+
         // same level, same name
         if let Some(stored_name) = _type.level_names.get(&level) {
             if *stored_name == name {
@@ -552,6 +516,7 @@ impl KeyTypesInfo {
             }
         }
 
+        // XXX: What about different level, same name?
         _type.level_names.insert(level, name);
 
         Ok(())
@@ -564,24 +529,17 @@ impl KeyTypesInfo {
         array_ndx: Option<ExprDef>,
         value: ExprDef,
     ) -> Result<(), CompileTypesError> {
-
-        let array_ndx = array_ndx.ok_or_else(||
-            ctx.report_type_should_be_array(
-                _type, "level name")
-        )?;
-
-        let level = array_ndx.resolve_level(ctx)
+        let level = array_ndx
+            .ok_or_else(|| ctx.report_type_should_be_array(_type, "level name"))?
+            .resolve_level(ctx)
             .ok_or_else(|| {
-            ctx.report_type_bad_type(
-                XkbError::UnsupportedModifierMask.into(),
-                _type,
-                "level name",
-                "integer",
-            )
-
-
+                ctx.report_type_bad_type(
+                    XkbError::UnsupportedModifierMask,
+                    _type,
+                    "level name",
+                    "integer",
+                )
             })?;
-
 
         let level_name = value.resolve_string(ctx)
             .ok_or_else(|| {
@@ -637,8 +595,7 @@ impl KeyTypesInfo {
             }
         };
 
-        //bitwise or
-        _type.defined = _type.defined.union(type_field);
+        _type.defined |= type_field;
 
         ok
     }
@@ -652,10 +609,7 @@ impl KeyTypesInfo {
         let mut ok = Ok(());
 
         for def in def {
-            let lhs = match def.name {
-                None => None,
-                Some(name) => name.resolve_lhs(ctx),
-            };
+            let lhs = def.name.and_then(|expr| expr.resolve_lhs(ctx));
 
             ok = match lhs.is_some() {
                 true => Ok(()),
@@ -669,8 +623,15 @@ impl KeyTypesInfo {
                     if elem.to_lowercase().as_str() == "type" {
                         log::error!("{:?}: Support for changing the default type has been removed; Statement ignored.",
                                     XkbError::InvalidSetDefaultStatement);
-                        continue;
+                    } else {
+                        log::error!("{:?}: Cannot set global defaults for \"{}\" element within a key type statement: move statements to the global file scope. Assignment to \"{}.{}\" ignored.",
+                            XkbError::GlobalDefaultsWrongScope,
+                            elem, elem, ret.field);
+
+                        ok = Err(CompileTypesError::InvalidFieldQualifier);
                     }
+
+                    continue;
                 }
                 ok = self.set_keytype_field(ctx, _type, ret.field, ret.index, def.value);
             }
@@ -698,17 +659,15 @@ impl KeyTypesInfo {
             level_names: BTreeMap::new(),
         };
 
-
         self.handle_keytype_body(ctx, def.body, &mut _type)
             .map_err(|e| {
                 self.errors.push(e.clone());
                 e
             })?;
 
-        self.add_keytype(ctx, _type, true)
-            .map_err(|e| {
-                self.errors.push(e.clone());
-                e
+        self.add_key_type(ctx, _type, true).map_err(|e| {
+            self.errors.push(e.clone());
+            e
         })?;
 
         Ok(())
@@ -732,7 +691,10 @@ impl KeyTypesInfo {
 
                     Ok(())
                 }
-                Decl::VMod(stmt) => self.mods.handle_vmod_def(ctx, stmt, merge).map_err(|e| e.into()),
+                Decl::VMod(stmt) => self
+                    .mods
+                    .handle_vmod_def(ctx, stmt, merge)
+                    .map_err(|e| e.into()),
                 stmt => {
                     log::error!(
                         "{:?}: Key type files may not include other declarations; Ignoring {}",
@@ -750,12 +712,11 @@ impl KeyTypesInfo {
 
             if let Some(err) = self.unrecoverable_error.as_ref() {
                 return Err(err.clone());
-            }
-            else if self.errors.len() > 10 {
+            } else if self.errors.len() > 10 {
                 let err = XkbError::InvalidSyntax;
 
                 log::error!("{:?}: Abandoning keytypes file {:?}", err, &self.name);
-                return Err(CompileTypesError::MultipleErrors(Box::new(self.errors.clone())));
+                return Err(CompileTypesError::MultipleErrors(self.errors.clone()));
             }
         }
 
@@ -765,44 +726,35 @@ impl KeyTypesInfo {
 
 impl KeymapBuilder<TextV1> {
     fn copy_keytypes(&mut self, info: KeyTypesInfo) {
-        let types;
         // If no types were specified, a default unnamed one-level type
         // is used for all keys.
-        if info.types.is_empty() {
-            let _type = KeyType {
+        let types = match info.types {
+            empty if empty.is_empty() => vec![KeyType {
                 mods: Mods { mods: 0, mask: 0 },
                 entries: vec![],
                 name: self.context.atom_intern("default".to_owned()),
                 num_levels: 1,
-                level_names: vec![],
-            };
-
-            types = vec![_type];
-        } else {
-            types = info
-                .types
+                level_names: BTreeMap::new(),
+            }],
+            types => types
                 .into_iter()
-                .map(|def| {
-                    KeyType {
-                        name: def.name,
-                        mods: Mods {
-                            mods: def.mods,
-                            mask: 0,
-                        },
-                        num_levels: def.num_levels,
+                .map(|def| KeyType {
+                    name: def.name,
+                    mods: Mods {
+                        mods: def.mods,
+                        mask: 0,
+                    },
+                    num_levels: def.num_levels,
 
-                        // TODO: does it matter if there are gaps?
-                        level_names: def.level_names.values().map(|c| *c).collect(),
-                        entries: def.entries,
-                    }
+                    level_names: def.level_names,
+                    entries: def.entries,
                 })
-                .collect();
-        }
+                .collect(),
+        };
         self.types_section_name = info.name;
         // TODO: escape
         self.types = types;
         self.mods = info.mods;
-
     }
 }
 
@@ -814,6 +766,12 @@ pub(super) fn compile_keytypes(
     let mut info = KeyTypesInfo::new(0, builder.mods.clone());
 
     info.handle_key_types_file(&mut builder.context, file, merge)?;
+
+    if let Some(err) = info.unrecoverable_error {
+        return Err(err);
+    } else if !info.errors.is_empty() {
+        return Err(CompileTypesError::MultipleErrors(info.errors));
+    }
 
     builder.copy_keytypes(info);
 

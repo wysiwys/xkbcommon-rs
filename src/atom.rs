@@ -39,11 +39,12 @@ impl AtomTable {
         index + 1
     }
 
-    pub(crate) fn get<'a>(&'a self, atom: Atom) -> Option<&'a str> {
-        if atom == 0 {
-            return None;
-        }
+    pub(crate) fn get(&self, atom: Atom) -> Option<&str> {
+        let atom_idx = match atom {
+            0 => return None,
+            atom => atom - 1,
+        };
 
-        self.data.get(atom - 1).map(|s| s.as_str())
+        self.data.get(atom_idx).map(|s| s.as_str())
     }
 }

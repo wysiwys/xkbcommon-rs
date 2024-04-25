@@ -6,51 +6,42 @@ use crate::keymap::*;
 use crate::keysyms::*;
 use crate::rust_xkbcommon::*;
 
-
 use thiserror::Error;
 
-#[derive(Debug,Error, PartialEq)]
+#[derive(Debug, Error, PartialEq)]
 pub enum ModIndexIsConsumedError {
-
     #[error("The provided mod index does not exist: {0}")]
     NoSuchModIndex(usize),
 
-    #[error("The keycode {0:?} does not correspond to a key in the State")] 
+    #[error("The keycode {0:?} does not correspond to a key in the State")]
     NoSuchKeyAtKeycode(Keycode),
-
 }
 
-#[derive(Debug,Error)]
+#[derive(Debug, Error)]
 pub enum LedIsActiveError {
     #[error("The provided LED index does not exist: {0}")]
     NoSuchLedIndex(usize),
 
     #[error("The provided LED name does not exist: {0}")]
     NoSuchLedName(String),
-
 }
 
-#[derive(Debug,Error)]
+#[derive(Debug, Error)]
 pub enum LayoutIsActiveError {
-    
     #[error("The provided layout index does not exist: {0}")]
     NoSuchLayoutIndex(usize),
 
     #[error("The provided layout name does not exist: {0}")]
     NoSuchLayoutName(String),
-
-
 }
 
-#[derive(Debug,Error)]
+#[derive(Debug, Error)]
 pub enum ModIsActiveError {
-    
     #[error("The provided mod index does not exist: {0}")]
     NoSuchModIndex(usize),
 
     #[error("The provided mod name does not exist: {0}")]
     NoSuchModName(String),
-
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -65,7 +56,7 @@ enum InternalStateError {
 }
 
 impl Filter {
-    fn new(action: Action, key: Key) -> Result<Self, InternalStateError> {
+    fn new(action: Action, key: RawKeycode) -> Result<Self, InternalStateError> {
         use ActionType::*;
 
         let filter = match action {
@@ -148,20 +139,20 @@ impl State {
 struct Filter {
     action: Action, //TODO: it's possible this should be a reference
     func: FilterFunc,
-    key: Key,
+    key: RawKeycode,
     refcnt: usize,
     _priv: FilterData,
 }
 
 impl Filter {
-    fn mod_action<'f>(&'f mut self) -> Result<&'f mut ModAction, InternalStateError> {
+    fn mod_action(&mut self) -> Result<&mut ModAction, InternalStateError> {
         match self.action {
             Action::Mods(ref mut action) => Ok(action),
             _ => Err(InternalStateError::WrongActionType),
         }
     }
 
-    fn group_action<'f>(&'f mut self) -> Result<&'f mut GroupAction, InternalStateError> {
+    fn group_action(&mut self) -> Result<&mut GroupAction, InternalStateError> {
         match self.action {
             Action::Group(ref mut action) => Ok(action),
             _ => Err(InternalStateError::WrongActionType),
@@ -169,7 +160,7 @@ impl Filter {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum FilterFunc {
     ModSet,
     ModLatch,
@@ -204,34 +195,18 @@ enum FilterData {
     Group(u32),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct StateComponents {
     // these may be negative
-    base_group: Option<i32>,
-    latched_group: Option<i32>,
-    locked_group: Option<i32>,
-    group: Option<LayoutIndex>,
+    base_group: i32,
+    latched_group: i32,
+    locked_group: i32,
+    group: LayoutIndex,
     base_mods: ModMask,
     latched_mods: ModMask,
     locked_mods: ModMask,
     mods: ModMask,
     leds: LedMask,
-}
-
-impl Default for StateComponents {
-    fn default() -> Self {
-        Self {
-            base_group: None,
-            latched_group: None,
-            locked_group: None,
-            group: None,
-            base_mods: 0,
-            latched_mods: 0,
-            locked_mods: 0,
-            mods: 0,
-            leds: 0,
-        }
-    }
 }
 
 #[derive(Clone)]
@@ -266,12 +241,12 @@ struct Filters {
 
 impl KeyType {
     fn get_entry_for_mods(&self, mods: &ModMask) -> Option<&KeyTypeEntry> {
-        for entry in self.entries.iter() {
-            if entry.is_active() && entry.mods.mask == *mods {
-                return Some(entry);
-            }
-        }
-        None
+        let entry = self
+            .entries
+            .iter()
+            .find(|entry| entry.is_active() && entry.mods.mask == *mods);
+
+        entry
     }
 }
 
@@ -318,9 +293,8 @@ pub(super) fn wrap_group_into_range(
         return None;
     }
 
-    // TODO: better error handling
     if let Ok(layout_idx) = group.try_into() {
-        if layout_idx < num_groups.into() {
+        if layout_idx < num_groups {
             return Some(layout_idx);
         }
     }
@@ -363,17 +337,15 @@ impl State {
     pub fn key_get_layout(&self, kc: RawKeycode) -> Option<LayoutIndex> {
         let key = self.keymap.xkb_key(kc)?;
 
-        let group = self.components.group.unwrap_or_else(|| 0);
-
         wrap_group_into_range(
-            group.try_into().unwrap(),
+            self.components.group.try_into().unwrap(),
             key.groups.len(),
             &key.out_of_range_group_action,
             &key.out_of_range_group_number,
         )
     }
 
-    fn key_get_action<'a>(&'a self, kc: RawKeycode) -> Option<&'a Action> {
+    fn key_get_action(&self, kc: RawKeycode) -> Option<&Action> {
         // Changed to use kc for borrow reasons
         // TODO: avoid these repeat `get`s
 
@@ -382,28 +354,25 @@ impl State {
         let level = self.key_get_level(kc, layout)?;
         let key = self.keymap.xkb_key(kc)?;
 
-        let action = key.groups.get(layout)?.levels.get(level)?.action.as_ref();
+        let action = &key.groups.get(layout)?.levels.get(level)?.action;
 
-        action
+        // TODO: return None if ActionType::None?
+        Some(action)
     }
 }
 
 impl Filters {
     /// corresponds to `xkb_filter_new`
-    fn add_or_modify_filter_idx(
+    fn add_or_modify_filter(
         &mut self,
         action: Action,
-        key: Key,
+        key: RawKeycode,
     ) -> Result<Option<usize>, InternalStateError> {
         let prev_filter = self
             .filters
             .iter_mut()
             .enumerate()
-            .filter(|(_, f)| match f.func {
-                FilterFunc::None => true,
-                _ => false,
-            })
-            .next();
+            .find(|(_, f)| f.func == FilterFunc::None);
 
         let (idx, filter_to_modify) = match prev_filter {
             Some((idx, f)) => {
@@ -481,27 +450,18 @@ impl State {
             .get_mut(filter_idx)
             .ok_or(InternalStateError::NoSuchFilter)?;
 
-        let data = self.components.base_group.map(|g| match g.try_into() {
-            Ok(v) => Ok(FilterData::Group(v)),
-            Err(_) => Err(InternalStateError::WrongFilterData),
-        });
+        let base_group = self.components.base_group.try_into().unwrap();
 
-        filter._priv = match data {
-            Some(data) => data?,
-            None => FilterData::None,
-        };
+        filter._priv = FilterData::Group(base_group);
 
         if filter
             .group_action()?
             .flags
             .intersects(ActionFlags::AbsoluteSwitch)
         {
-            self.components.base_group = filter.group_action()?.group;
+            self.components.base_group = filter.group_action()?.group.unwrap_or(0);
         } else {
-            self.components.base_group = match self.components.base_group {
-                None => filter.group_action()?.group,
-                Some(n) => Some(n + filter.group_action()?.group.unwrap_or_else(|| 0)),
-            };
+            self.components.base_group += filter.group_action()?.group.unwrap_or(0);
         }
 
         Ok(())
@@ -518,13 +478,13 @@ impl State {
             .filters
             .get_mut(filter_idx)
             .ok_or(InternalStateError::NoSuchFilter)?;
-        
 
-        let key = self.keymap.xkb_key(kc)
+        // check that key exists
+        self.keymap
+            .xkb_key(kc)
             .ok_or(InternalStateError::NoSuchKey)?;
-    
 
-        if *key != filter.key {
+        if kc != filter.key {
             filter.group_action()?.flags &= !ActionFlags::LockClear;
             return Ok(FilterResult::Continue);
         }
@@ -540,8 +500,8 @@ impl State {
         }
 
         self.components.base_group = match &filter._priv {
-            FilterData::Group(u) => Some((*u).try_into().unwrap()),
-            FilterData::None => Some(0),
+            FilterData::Group(u) => (*u).try_into().unwrap(),
+            FilterData::None => 0,
             _ => return Err(InternalStateError::WrongFilterData),
         };
 
@@ -550,7 +510,7 @@ impl State {
             .flags
             .intersects(ActionFlags::LockClear)
         {
-            self.components.locked_group = None; //TODO: None?
+            self.components.locked_group = 0;
         }
 
         filter.func = FilterFunc::None;
@@ -567,12 +527,9 @@ impl State {
         let group_action = filter.group_action()?;
 
         if group_action.flags.intersects(ActionFlags::AbsoluteSwitch) {
-            self.components.locked_group = group_action.group;
+            self.components.locked_group = group_action.group.unwrap_or(0);
         } else {
-            self.components.locked_group = match self.components.locked_group {
-                Some(n) => Some(n + group_action.group.unwrap_or_else(|| 0)),
-                None => group_action.group,
-            }
+            self.components.locked_group += group_action.group.unwrap_or(0);
         }
 
         Ok(())
@@ -590,13 +547,12 @@ impl State {
             .get_mut(filter_idx)
             .ok_or(InternalStateError::NoSuchFilter)?;
 
-        let key = match self.keymap.xkb_key(kc) {
-            Some(key) => key,
-            None => return Err(InternalStateError::NoSuchKey),
-        };
+        self.keymap
+            .xkb_key(kc)
+            .ok_or(InternalStateError::NoSuchKey)?;
 
         use FilterResult::*;
-        if *key != filter.key {
+        if kc != filter.key {
             return Ok(Continue);
         }
 
@@ -642,12 +598,12 @@ impl State {
             .get_mut(filter_idx)
             .ok_or(InternalStateError::NoSuchFilter)?;
 
-        let key = match self.keymap.xkb_key(kc) {
-            Some(key) => key,
-            None => return Err(InternalStateError::NoSuchKey),
-        };
+        // determine if key exists
+        self.keymap
+            .xkb_key(kc)
+            .ok_or(InternalStateError::NoSuchKey)?;
 
-        if *key != filter.key {
+        if kc != filter.key {
             filter.mod_action()?.flags &= !ActionFlags::LockClear;
 
             return Ok(Continue);
@@ -671,7 +627,7 @@ impl State {
         }
 
         filter.func = FilterFunc::None;
-        return Ok(Continue);
+        Ok(Continue)
     }
 }
 
@@ -709,14 +665,13 @@ impl State {
             .get_mut(filter_idx)
             .ok_or(InternalStateError::NoSuchFilter)?;
 
-        let key = match self.keymap.xkb_key(kc) {
-            Some(key) => key,
-            None => return Err(InternalStateError::NoSuchKey),
-        };
+        self.keymap
+            .xkb_key(kc)
+            .ok_or(InternalStateError::NoSuchKey)?;
 
         use FilterResult::*;
 
-        if *key != filter.key {
+        if kc != filter.key {
             return Ok(Continue);
         }
 
@@ -739,6 +694,7 @@ impl State {
         {
             let mods = match filter._priv {
                 FilterData::Mods(mods) => mods,
+                FilterData::None => 0,
                 _ => return Err(InternalStateError::WrongFilterData),
             };
             self.components.locked_mods &= !mods;
@@ -746,36 +702,26 @@ impl State {
 
         filter.func = FilterFunc::None;
 
-        return Ok(Continue);
+        Ok(Continue)
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, Default)]
 enum LatchState {
+    #[default]
     NoLatch,
     KeyDown,
     Pending,
 }
 
-impl Default for LatchState {
-    fn default() -> Self {
-        LatchState::NoLatch
-    }
-}
-
 impl Action {
     fn breaks_latch(&self) -> bool {
         use ActionType::*;
-        match self.action_type() {
-            e if [
-                None, PtrButton, PtrLock, CtrlSet, CtrlLock, SwitchVT, Terminate,
-            ]
-            .contains(&e) =>
-            {
-                true
-            }
-            _ => false,
-        }
+
+        [
+            None, PtrButton, PtrLock, CtrlSet, CtrlLock, SwitchVT, Terminate,
+        ]
+        .contains(&self.action_type())
     }
 }
 
@@ -806,10 +752,9 @@ impl State {
             .get_mut(filter_idx)
             .ok_or(InternalStateError::NoSuchFilter)?;
 
-        let key = match self.keymap.xkb_key(kc) {
-            Some(key) => key,
-            None => return Err(InternalStateError::NoSuchKey),
-        };
+        self.keymap
+            .xkb_key(kc)
+            .ok_or(InternalStateError::NoSuchKey)?;
 
         use FilterResult::*;
         let mut latch: LatchState = match &filter._priv {
@@ -828,7 +773,7 @@ impl State {
                         && mod_action.flags == filter.mod_action()?.flags
                         && mod_action.mods.mask == filter.mod_action()?.mods.mask =>
                 {
-                    // TODO: is this supposed to be a reference?
+                    // TODO: should this be a reference?
                     filter.action = Action::Mods(mod_action.clone());
 
                     if mod_action.flags.intersects(ActionFlags::LatchToLock) {
@@ -841,8 +786,7 @@ impl State {
                         filter.func = FilterFunc::ModSet;
                         self.set_mods = mod_action.mods.mask;
                     }
-                    // TODO: should this be a reference?
-                    filter.key = key.clone();
+                    filter.key = kc;
                     self.components.latched_mods &= !mod_action.mods.mask;
                     // "XXX beep beep!"
 
@@ -862,7 +806,7 @@ impl State {
                 }
                 _ => {} // do nothing
             }
-        } else if direction == KeyDirection::Up && *key == filter.key {
+        } else if direction == KeyDirection::Up && kc == filter.key {
             // Our key got released. If we've set it to clear locks,
             // and we currently have the same modifiers locked, then
             // release them and don't actually latch. Else we've
@@ -886,7 +830,7 @@ impl State {
                     self.clear_mods = filter.mod_action()?.mods.mask;
                 }
 
-                self.components.locked_mods &= filter.mod_action()?.mods.mask;
+                self.components.locked_mods &= !filter.mod_action()?.mods.mask;
 
                 filter.func = FilterFunc::None;
             } else {
@@ -907,7 +851,7 @@ impl State {
 
         filter._priv = FilterData::Latch(latch);
 
-        return Ok(Continue);
+        Ok(Continue)
     }
 
     /// Applies any relevant filters to the key, first from the list of
@@ -919,19 +863,18 @@ impl State {
         kc: RawKeycode,
         direction: KeyDirection,
     ) -> Result<(), InternalStateError> {
-        
         let mut consumed = false;
 
         // First run through all the currently active filters
         // and see if any of them have consumed this event.
 
         for idx in 0..self.filters.filters.len() {
+            // TODO: since these are not overwritten, doesn't the filters array build up and become very long?
             if let FilterFunc::None = self.filters.filters[idx].func {
                 continue;
             }
 
-            let result: FilterResult = self.apply_filter(kc, idx, direction)?;
-            if result == FilterResult::Consume {
+            if self.apply_filter(kc, idx, direction)? == FilterResult::Consume {
                 consumed = true;
             }
         }
@@ -939,7 +882,6 @@ impl State {
         if consumed || direction == KeyDirection::Up {
             return Ok(());
         }
-        
 
         let action = match self.key_get_action(kc) {
             Some(action) => action.clone(),
@@ -955,17 +897,15 @@ impl State {
         //      ```
         //We don't handle those
 
-        // TODO: this is redundant
         if action.action_type() >= ActionType::Private {
             return Ok(());
         }
 
-        let key = match self.keymap.xkb_key_mut(kc) {
-            Some(key) => key.clone(),
-            None => return Ok(()),
-        };
+        if self.keymap.xkb_key(kc).is_none() {
+            return Ok(());
+        }
 
-        let filter_idx = match self.filters.add_or_modify_filter_idx(action, key)? {
+        let filter_idx = match self.filters.add_or_modify_filter(action, kc)? {
             Some(idx) => idx,
             None => return Ok(()),
         }; // skip invalid action
@@ -995,10 +935,11 @@ impl State {
     /// Get the keymap which a keyboard state object is using
     ///
     /// Returns the keymap which was passed to [State::new()] when creating this state object.
-    pub fn get_keymap<'s>(&'s self) -> &'s Keymap {
+    pub fn get_keymap(&self) -> &Keymap {
         &self.keymap
     }
 
+    // Update the LED state to match the rest of the State
     fn led_update_all(&mut self) {
         self.components.leds = 0;
 
@@ -1015,7 +956,7 @@ impl State {
                         mod_mask |= self.components.base_mods;
                     }
                     if led.which_mods.intersects(StateComponent::MODS_LATCHED) {
-         mod_mask |= self.components.latched_mods;
+                        mod_mask |= self.components.latched_mods;
                     }
                     if led.which_mods.intersects(StateComponent::MODS_LOCKED) {
                         mod_mask |= self.components.locked_mods;
@@ -1033,22 +974,22 @@ impl State {
                         .which_groups
                         .intersects(StateComponent::LAYOUT_EFFECTIVE)
                     {
-                        group_mask |= 1u32 << self.components.group.unwrap_or_else(|| 0);
+                        group_mask |= 1u32 << self.components.group;
                     }
                     if led
                         .which_groups
                         .intersects(StateComponent::LAYOUT_DEPRESSED)
                     {
-                        group_mask |= 1u32 << self.components.base_group.unwrap_or_else(|| 0);
+                        group_mask |= 1u32 << self.components.base_group;
                     }
                     if led.which_groups.intersects(StateComponent::LAYOUT_LATCHED) {
-                        group_mask |= 1u32 << self.components.latched_group.unwrap_or_else(|| 0);
+                        group_mask |= 1u32 << self.components.latched_group;
                     }
                     if led.which_groups.intersects(StateComponent::LAYOUT_LOCKED) {
-                        group_mask |= 1u32 << self.components.locked_group.unwrap_or_else(|| 0);
+                        group_mask |= 1u32 << self.components.locked_group;
                     }
 
-                    if (led.groups & group_mask) != 0 {
+                    if (led.groups & group_mask) > 0 {
                         self.components.leds |= 1u32 << idx;
                         continue;
                     }
@@ -1066,33 +1007,32 @@ impl State {
     /// from an up-to-date State.
     fn update_derived(&mut self) {
         // Update state.components.mods
+
         self.components.mods =
             self.components.base_mods | self.components.latched_mods | self.components.locked_mods;
 
+        // TODO: use groups_wrap to control instead of always RANGE_WRAP.
         let wrapped = wrap_group_into_range(
-            self.components.locked_group.unwrap_or_else(|| 0),
+            self.components.locked_group,
             self.keymap.num_groups,
             &RangeExceedType::Wrap,
             &0,
-        );
+        )
+        .unwrap_or(0);
 
-        let locked_group = wrapped.unwrap_or_else(|| 0);
-        let locked_group: i32 = match locked_group.try_into() {
-            Ok(val) => val,
-            _ => 0,
-        };
-        self.components.locked_group = Some(locked_group);
+        self.components.locked_group = wrapped.try_into().unwrap_or(0);
 
         let wrapped = wrap_group_into_range(
-            self.components.base_group.unwrap_or_else(|| 0)
-                + self.components.latched_group.unwrap_or_else(|| 0)
-                + self.components.locked_group.unwrap_or_else(|| 0),
+            self.components.base_group
+                + self.components.latched_group
+                + self.components.locked_group,
             self.keymap.num_groups,
             &RangeExceedType::Wrap,
             &0,
-        );
+        )
+        .unwrap_or(0);
 
-        self.components.group = Some(wrapped.unwrap_or_else(|| 0));
+        self.components.group = wrapped;
 
         self.led_update_all();
     }
@@ -1149,7 +1089,6 @@ impl State {
     /// in the state has changed, returns 0.
     #[cfg(feature = "server")]
     pub fn update_key(&mut self, kc: Keycode, direction: KeyDirection) -> StateComponent {
-
         if self.keymap.xkb_key(kc.raw()).is_none() {
             return StateComponent::empty();
         }
@@ -1198,7 +1137,6 @@ impl State {
         self.update_derived();
 
         self.components.get_changes(&prev_components)
-
     }
     /// Updates the state from a set of explicit masks.
     ///
@@ -1237,30 +1175,24 @@ impl State {
         // We OR here because mod_mask_get_effective() drops vmods.
         self.components.base_mods |= self
             .keymap
+            .mods
             .mod_mask_get_effective(self.components.base_mods);
         self.components.latched_mods |= self
             .keymap
+            .mods
             .mod_mask_get_effective(self.components.latched_mods);
         self.components.locked_mods |= self
             .keymap
+            .mods
             .mod_mask_get_effective(self.components.locked_mods);
 
         // TODO: is this right?
-        self.components.base_group = match base_group {
-            0 => None,
-            m => m.try_into().ok(),
-        };
+        // TODO: return error if value out of bounds
+        self.components.base_group = base_group.try_into().unwrap();
 
-        self.components.latched_group = match latched_group {
-            0 => None,
-            m => m.try_into().ok(),
-        };
+        self.components.latched_group = latched_group.try_into().unwrap();
 
-        self.components.locked_group = match locked_group {
-            0 => None,
-            m => m.try_into().ok(),
-        };
-
+        self.components.locked_group = locked_group.try_into().unwrap();
         self.update_derived();
 
         self.components.get_changes(&prev_components)
@@ -1300,10 +1232,10 @@ impl State {
             None => return false,
         };
 
-        let is_active = match self.mod_index_is_active(caps, StateComponent::MODS_EFFECTIVE) {
-            Ok(b) => b,
-            _ => false,
-        };
+        let is_active = matches!(
+            self.mod_index_is_active(caps, StateComponent::MODS_EFFECTIVE),
+            Ok(true)
+        );
 
         is_active && self.mod_index_is_consumed(Keycode::from(kc), caps) == Ok(false)
     }
@@ -1314,12 +1246,12 @@ impl State {
             None => return false,
         };
 
-        let is_active = match self.mod_index_is_active(ctrl, StateComponent::MODS_EFFECTIVE) {
-            Ok(b) => b,
-            _ => false,
-        };
-        return is_active 
-            && self.mod_index_is_consumed(Keycode::from(kc), ctrl) == Ok(false);
+        let is_active = matches!(
+            self.mod_index_is_active(ctrl, StateComponent::MODS_EFFECTIVE),
+            Ok(true)
+        );
+
+        is_active && self.mod_index_is_consumed(Keycode::from(kc), ctrl) == Ok(false)
     }
 }
 
@@ -1331,17 +1263,19 @@ fn xkb_to_control(ch: u8) -> char {
     let c_000 = u8::from_str_radix("000", 8).unwrap();
     let c_033 = u8::from_str_radix("033", 8).unwrap();
 
-    if (ch > '@' && c < c_177) || ch == ' ' {
+    if (ch >= '@' && c < c_177) || ch == ' ' {
         c &= 0x1F;
     } else if ch == '2' {
         c = c_000;
-    } else if ch >= '3' && ch <= '7' {
+    } else if ('3'..='7').contains(&ch) {
         c -= u8::try_from('3').unwrap() - c_033;
     } else if ch == '8' {
         c = c_177;
+    } else if ch == '/' {
+        c = u8::try_from('_').unwrap() & 0x1F;
     }
 
-    return c.into();
+    c.into()
 }
 
 impl State {
@@ -1363,7 +1297,7 @@ impl State {
         let sym = syms[0];
 
         if self.should_do_caps_transformation(kc.raw()) {
-            return Some(keysym_to_upper(sym));
+            return Some(keysym_to_upper(&sym));
         }
 
         Some(sym)
@@ -1378,20 +1312,14 @@ impl State {
     // but it is enabled by default :)
 
     fn get_one_sym_for_string(&self, kc: RawKeycode) -> Option<Keysym> {
-        let layout = match self.key_get_layout(kc) {
-            Some(layout) => layout,
-            None => return None,
-        };
+        let layout = self.key_get_layout(kc)?;
 
         let num_layouts = match self.keymap.num_layouts_for_key(Keycode::from(kc)) {
             Some(n) if n != 0 => n,
             _ => return None,
         };
 
-        let level = match self.key_get_level(kc, layout) {
-            Some(level) => level,
-            None => return None,
-        };
+        let level = self.key_get_level(kc, layout)?;
 
         let syms = match self
             .keymap
@@ -1423,7 +1351,7 @@ impl State {
         }
 
         if self.should_do_caps_transformation(kc) {
-            sym = keysym_to_upper(sym);
+            sym = keysym_to_upper(&sym);
         }
 
         Some(sym)
@@ -1443,26 +1371,24 @@ impl State {
         }
 
         // make sure not to truncate in the middle of a UTF-8 sequence.
-        let utf8: Vec<_> = syms.iter()
-            .map(|sym| crate::keysyms_utf::keysym_to_utf8(sym))
+        let utf8: Vec<_> = syms
+            .iter()
+            .map(crate::keysyms_utf::keysym_to_utf8)
             .collect::<Option<_>>()?;
 
-        let utf8: Vec<_> = utf8.into_iter()
-            .flatten().collect();
-         
+        let utf8: Vec<_> = utf8.into_iter().flatten().collect();
+
         // TODO: check is valid utf 8
         if !crate::utf8::is_valid_utf8(&utf8) {
             return None;
         }
-        
-        if utf8.len() == 1 && utf8[0] <= 127
-            && self.should_do_ctrl_transformation(kc.raw()) {
-                let mut buf = Vec::with_capacity(4);
-                let c = xkb_to_control(utf8[0]);
-                c.encode_utf8(&mut buf);
 
-                return Some(buf);
-            
+        if utf8.len() == 1 && utf8[0] <= 127 && self.should_do_ctrl_transformation(kc.raw()) {
+            let mut buf = Vec::with_capacity(4);
+            let c = xkb_to_control(utf8[0]);
+            c.encode_utf8(&mut buf);
+
+            return Some(buf);
         }
 
         Some(utf8)
@@ -1478,8 +1404,7 @@ impl State {
     ///
     pub fn key_get_utf32(&self, kc: Keycode) -> Option<u32> {
         let sym = self.get_one_sym_for_string(kc.raw())?;
-        let mut cp: u32 = crate::keysyms_utf::keysym_to_utf32(&sym)?
-            .into();
+        let mut cp: u32 = crate::keysyms_utf::keysym_to_utf32(&sym)?.into();
 
         if self.should_do_ctrl_transformation(kc.raw()) {
             if let Ok(c) = u8::try_from(cp) {
@@ -1540,27 +1465,32 @@ impl State {
         let mut ret = 0;
 
         if _type.intersects(StateComponent::LAYOUT_EFFECTIVE) {
-            return self.components.group.unwrap_or_else(|| 0);
+            return self.components.group;
         }
         if _type.intersects(StateComponent::LAYOUT_DEPRESSED) {
-            ret += self.components.base_group.unwrap_or_else(|| 0);
+            ret += self.components.base_group;
         }
         if _type.intersects(StateComponent::LAYOUT_LATCHED) {
-            ret += self.components.latched_group.unwrap_or_else(|| 0);
+            ret += self.components.latched_group;
         }
         if _type.intersects(StateComponent::LAYOUT_LOCKED) {
-            ret += self.components.locked_group.unwrap_or_else(|| 0);
+            ret += self.components.locked_group;
         }
 
         ret.try_into().unwrap()
     }
 }
 
-impl Keymap {
-    fn mod_mask_get_effective(&self, mods: ModMask) -> ModMask {
+impl ModSet {
+    // Gets a modifier mask and returns the resolved effective mask; this is needed because some
+    // modifiers can also map to other modifiers, e.g. the "NumLock" modifier usually also sets the
+    // "Mod2" modifier.
+    // drops vmods
+    pub(crate) fn mod_mask_get_effective(&self, mods: ModMask) -> ModMask {
+        // The effective mask is only real mods for now
         let mut mask = mods & MOD_REAL_MASK_ALL;
 
-        for (i, _mod) in self.mods.mods.iter().enumerate() {
+        for (i, _mod) in self.mods.iter().enumerate() {
             if (mods & (1u32 << i)) != 0 {
                 mask |= _mod.mapping;
             }
@@ -1587,7 +1517,7 @@ impl State {
 
         let serialized_mods = self._serialize_mods(_type);
 
-        return Ok((serialized_mods & (1u32 << idx)) != 0);
+        Ok((serialized_mods & (1u32 << idx)) != 0)
     }
 
     /// Helper function for `State::mod_indices_are_active`
@@ -1595,15 +1525,15 @@ impl State {
     fn match_mod_masks(&self, _type: StateComponent, _match: StateMatch, wanted: ModMask) -> bool {
         let active = self._serialize_mods(_type);
 
-        if !(_match.intersects(StateMatch::NON_EXCLUSIVE)) && (active & !wanted) != 0 {
+        if !_match.intersects(StateMatch::NON_EXCLUSIVE) && (active & !wanted > 0) {
             return false;
         }
 
         if _match.intersects(StateMatch::ANY) {
-            return (active & wanted) != 0;
+            return (active & wanted) > 0;
         }
 
-        return (active & wanted) == wanted;
+        (active & wanted) == wanted
     }
 
     /// Test whether a set of modifiers are active in a given keyboard state by index.
@@ -1623,8 +1553,7 @@ impl State {
             wanted |= 1 << idx;
         }
 
-
-        return Ok(self.match_mod_masks(_type, _match, wanted));
+        Ok(self.match_mod_masks(_type, _match, wanted))
     }
 
     /// Test whether a modifier is active in a given keyboard state by name.
@@ -1639,11 +1568,11 @@ impl State {
     ) -> Result<bool, ModIsActiveError> {
         let idx = match self.keymap.mod_get_index(name) {
             Some(idx) => idx,
+            // TODO: rename to InvalidModifier
             None => return Err(ModIsActiveError::NoSuchModName(name.to_string())),
         };
 
         self.mod_index_is_active(idx, _type)
-
     }
 
     /// Test whether a set of modifiers are active in a given keyboard state by name
@@ -1660,18 +1589,14 @@ impl State {
         let mut wanted: ModMask = 0;
 
         for arg in args {
-
-            let idx = match self.keymap.mod_get_index(&arg) {
-                Some(idx) => idx,
-                None => 
-                    return Err(ModIsActiveError::NoSuchModName(arg))
-            };
-
+            let idx = self
+                .keymap
+                .mod_get_index(&arg)
+                .ok_or(ModIsActiveError::NoSuchModName(arg))?;
             wanted |= 1 << idx;
         }
 
-
-        return Ok(self.match_mod_masks(_type, _match, wanted));
+        Ok(self.match_mod_masks(_type, _match, wanted))
     }
 
     /// Test whether a layout is active in a given keyboard state by index.
@@ -1684,37 +1609,27 @@ impl State {
         idx: LayoutIndex,
         _type: StateComponent,
     ) -> Result<bool, LayoutIsActiveError> {
-
         if idx >= self.keymap.num_groups {
             return Err(LayoutIsActiveError::NoSuchLayoutIndex(idx));
         }
 
-        if _type.intersects(StateComponent::LAYOUT_EFFECTIVE) {
-            if self.components.group.unwrap_or_else(|| 0) == idx {
-                return Ok(true);
-            }
+        if _type.intersects(StateComponent::LAYOUT_EFFECTIVE) && self.components.group == idx {
+            return Ok(true);
         }
 
-        let idx: i32 = match idx.try_into() {
-            Ok(idx) => idx,
-            // TODO: more informative error type?
-            Err(_) => return Err(LayoutIsActiveError::NoSuchLayoutIndex(idx)),
-        };
+        let idx: i32 = idx
+            .try_into()
+            .map_err(|_| LayoutIsActiveError::NoSuchLayoutIndex(idx))?;
 
-        if _type.intersects(StateComponent::LAYOUT_DEPRESSED) {
-            if self.components.base_group.unwrap_or_else(|| 0) == idx {
-                return Ok(true);
-            }
+        if _type.intersects(StateComponent::LAYOUT_DEPRESSED) && self.components.base_group == idx {
+            return Ok(true);
         }
-        if _type.intersects(StateComponent::LAYOUT_LATCHED) {
-            if self.components.latched_group.unwrap_or_else(|| 0) == idx {
-                return Ok(true);
-            }
+        if _type.intersects(StateComponent::LAYOUT_LATCHED) && self.components.latched_group == idx
+        {
+            return Ok(true);
         }
-        if _type.intersects(StateComponent::LAYOUT_LOCKED) {
-            if self.components.locked_group.unwrap_or_else(|| 0) == idx {
-                return Ok(true);
-            }
+        if _type.intersects(StateComponent::LAYOUT_LOCKED) && self.components.locked_group == idx {
+            return Ok(true);
         }
 
         Ok(false)
@@ -1747,18 +1662,17 @@ impl State {
         }
 
         if let Some(Some(_)) = self.keymap.leds.get(idx) {
-        
+
             // do nothing
         } else {
             return Err(LedIsActiveError::NoSuchLedIndex(idx));
         }
 
-        return Ok((self.components.leds & (1 << idx)) != 0);
+        Ok((self.components.leds & (1 << idx)) != 0)
     }
 
     /// Test whether a LED is active in a given keyboard state by name.
-    pub fn led_name_is_active(&self, name: &str) 
-        -> Result<bool, LedIsActiveError> {
+    pub fn led_name_is_active(&self, name: &str) -> Result<bool, LedIsActiveError> {
         let idx = match self.keymap.led_get_index(name) {
             Some(idx) => idx,
             None => return Err(LedIsActiveError::NoSuchLedName(name.into())),
@@ -1771,16 +1685,18 @@ impl State {
         let mut preserve: ModMask = 0;
         let mut consumed: ModMask = 0;
 
-        
         let group = match self.key_get_layout(key.keycode.raw()) {
             Some(g) => g,
             None => return 0,
         };
 
-        let type_index = key.groups[group].key_type;
-        let _type = self.keymap.types.get(type_index).unwrap();
+        let _type = self
+            .keymap
+            .types
+            .get(key.groups[group].key_type)
+            .expect("Could not retrieve type for key");
 
-        let matching_entry = self.get_entry_for_key_state(&key, group);
+        let matching_entry = self.get_entry_for_key_state(key, group);
         if let Some(entry) = matching_entry {
             preserve = entry.preserve.mask;
         }
@@ -1823,24 +1739,25 @@ impl State {
         idx: ModIndex,
         mode: ConsumedMode,
     ) -> Result<bool, ModIndexIsConsumedError> {
-        
         if idx >= self.keymap.num_mods() {
-            
             return Err(ModIndexIsConsumedError::NoSuchModIndex(idx));
-
         }
-        let key = self.keymap.xkb_key(kc)
+        let key = self
+            .keymap
+            .xkb_key(kc)
             .ok_or_else(|| ModIndexIsConsumedError::NoSuchKeyAtKeycode(kc.into()))?;
-
 
         let mask = (1 << idx) & self.key_get_consumed(key, mode);
 
-        Ok(mask != 0)
+        Ok(mask > 0)
     }
 
     /// Same as [State::mod_index_is_consumed2()] with mode [ConsumedMode::Xkb]
-    pub fn mod_index_is_consumed(&self, kc: Keycode, idx: ModIndex) 
-        -> Result<bool, ModIndexIsConsumedError> {
+    pub fn mod_index_is_consumed(
+        &self,
+        kc: Keycode,
+        idx: ModIndex,
+    ) -> Result<bool, ModIndexIsConsumedError> {
         self.mod_index_is_consumed2(kc.raw(), idx, ConsumedMode::Xkb)
     }
 
@@ -1853,7 +1770,7 @@ impl State {
             None => return 0,
         };
 
-        return mask & !self.key_get_consumed(key, ConsumedMode::Xkb);
+        mask & !self.key_get_consumed(key, ConsumedMode::Xkb)
     }
 
     /// Get the mask of modifiers consumed by translating a given key.
@@ -1865,8 +1782,6 @@ impl State {
     /// # Output
     /// Returns a mask of the consumed modifiers.
     pub fn key_get_consumed_mods2(&self, kc: Keycode, mode: ConsumedMode) -> ModMask {
-        
-
         // default case for unrecognized consumed modifiers mode
         let key = match self.keymap.xkb_key(kc.raw()) {
             Some(key) => key,

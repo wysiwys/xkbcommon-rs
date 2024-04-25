@@ -12,7 +12,7 @@ use std::path::PathBuf;
 
 const EVDEV_OFFSET: u32 = 8;
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum KeySeqState {
     Down,
     Repeat,
@@ -49,8 +49,6 @@ pub(crate) fn test_key_seq(
             syms = vec![state.key_get_one_sym(kc).unwrap()];
         }
 
-        eprint!("Got {} syms for keycode {}: [", syms.len(), kc.raw());
-
         use KeySeqState::*;
         if [Down, Both].contains(&op) {
             state.update_key(kc, KeyDirection::Down);
@@ -58,11 +56,19 @@ pub(crate) fn test_key_seq(
         if [Up, Both].contains(&op) {
             state.update_key(kc, KeyDirection::Up);
         }
+
+        eprint!(
+            "op {:?} got {} syms for keycode {}: [",
+            op,
+            syms.len(),
+            kc.raw()
+        );
+
         if let Some(sym) = syms.get(0) {
-            let keysym = provided_keysym; // TODO: vec
-                                          //
-                                          // TODO: restrict to 64 chars
-            let ksbuf = keysym_get_name(sym);
+            let keysym = provided_keysym;
+
+            // TODO: restrict to 64 chars
+            let ksbuf = keysym_get_name(sym).unwrap();
             eprint!("{}", ksbuf);
 
             if keysym != *sym {
@@ -138,7 +144,9 @@ pub(crate) fn test_read_file(path_rel: &str) -> Option<String> {
     Some(data)
 }
 
-pub(crate) fn test_get_context(test_flags: TestContextFlags) -> Result<Context, IncludePathAppendError> {
+pub(crate) fn test_get_context(
+    test_flags: TestContextFlags,
+) -> Result<Context, IncludePathAppendError> {
     use std::env;
 
     let mut ctx_flags = ContextFlags::NO_DEFAULT_INCLUDES;

@@ -2,7 +2,6 @@ use crate::log_init;
 use crate::rust_xkbcommon::*;
 use crate::test::*;
 
-
 #[test]
 fn test_garbage_key() {
     log_init!();
@@ -159,4 +158,34 @@ fn test_numeric_keysyms() {
     assert_eq!(syms.len(), 0);
     let key = keymap.xkb_key(kc.raw()).unwrap();
     assert_eq!(key.modmap, MOD_3_MASK);
+}
+
+#[test]
+fn test_multiple_keysyms_per_level() {
+    let context = test_get_context(TestContextFlags::empty()).unwrap();
+
+    let first_layout = 0;
+
+    let keymap = test_compile_rules(
+        context,
+        Some("evdev"),
+        Some("pc104"),
+        Some("awesome"),
+        None,
+        None,
+    )
+    .unwrap();
+
+    let kc = keymap.key_by_name("AD01").unwrap();
+    let keysyms = keymap.key_get_syms_by_level(kc, first_layout, 0).unwrap();
+    assert_eq!(keysyms.len(), 3);
+    assert_eq!(keysyms[0], Keysym::q);
+    assert_eq!(keysyms[1], Keysym::a);
+    assert_eq!(keysyms[2], Keysym::b);
+
+    let kc = keymap.key_by_name("AD03").unwrap();
+    let keysyms = keymap.key_get_syms_by_level(kc, first_layout, 1).unwrap();
+    assert_eq!(keysyms.len(), 2);
+    assert_eq!(keysyms[0], Keysym::E);
+    assert_eq!(keysyms[1], Keysym::F);
 }

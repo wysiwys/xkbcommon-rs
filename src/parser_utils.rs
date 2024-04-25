@@ -1,7 +1,6 @@
 // This is some of the content from parser.y
 // also includes parts of scanner.c
 
-
 use crate::atom::Atom;
 use crate::context::Context;
 use crate::errors::*;
@@ -12,9 +11,7 @@ use crate::parser::XkbFilesParser;
 
 use xkeysym::Keysym;
 
-
 use std::rc::Rc;
-
 
 pub(crate) struct ParserParam<'p> {
     pub(super) ctx: &'p mut Context,
@@ -36,17 +33,17 @@ pub(crate) fn resolve_keysym(name: &str) -> Option<Keysym> {
     }
 }
 
-
-
 use thiserror::Error;
 
-#[derive(Clone,Debug,Error)]
+#[derive(Clone, Debug, Error)]
 pub enum XkbFileParseError {
-    
+    #[error("Wrong input format")]
+    WrongInputFormat,
+
     #[error("Could not read file {file:?} to string: {error:?}")]
-    CouldNotReadToString{
+    CouldNotReadToString {
         file: std::path::PathBuf,
-        error: Rc<std::io::Error>
+        error: Rc<std::io::Error>,
     },
 
     // TODO: better error handling
@@ -54,71 +51,75 @@ pub enum XkbFileParseError {
     InvalidToken(()),
 
     #[error("Parser encountered unexpected token: {token} in range {span_begin:?}..{span_end:?}")]
-    UnrecognizedToken{
+    UnrecognizedToken {
         token: String,
         span_begin: Location,
-        span_end: Location
+        span_end: Location,
     },
 
     #[error("Parser encountered extra token: {token} in range {span_begin:?}..{span_end:?}")]
-    ExtraToken{
+    ExtraToken {
         token: String,
         span_begin: Location,
-        span_end: Location
+        span_end: Location,
     },
 
     #[error("File ended early at location {0:?}")]
     UnrecognizedEof(Location),
 
     #[error("Expected: {0}")]
-    User(&'static str)
-
+    User(&'static str),
 }
 
 type Location = ();
 type Token = crate::lexer::Token;
 type Expected = &'static str;
-type ParseError = lalrpop_util::ParseError<
-    Location, Token, Expected>;
+type ParseError = lalrpop_util::ParseError<Location, Token, Expected>;
 
 impl From<ParseError> for XkbFileParseError {
-
     fn from(e: ParseError) -> Self {
-
         use lalrpop_util::ParseError::*;
         match e {
-            InvalidToken{ location: s } => Self::InvalidToken(s),
-            UnrecognizedToken{
-                token: (span_begin, token, span_end),..} => Self::UnrecognizedToken{
-                token: format!("{:?}", token), span_begin, span_end},
-            ExtraToken{
-                token: (span_begin, token, span_end)
-            } => Self::ExtraToken{
-                token: format!("{:?}",token), span_begin,
-                span_end},
-            UnrecognizedEof{
-                location,..} => Self::UnrecognizedEof(location),
-            User{error} => Self::User(error)
-
+            InvalidToken { location: s } => Self::InvalidToken(s),
+            UnrecognizedToken {
+                token: (span_begin, token, span_end),
+                ..
+            } => Self::UnrecognizedToken {
+                token: format!("{:?}", token),
+                span_begin,
+                span_end,
+            },
+            ExtraToken {
+                token: (span_begin, token, span_end),
+            } => Self::ExtraToken {
+                token: format!("{:?}", token),
+                span_begin,
+                span_end,
+            },
+            UnrecognizedEof { location, .. } => Self::UnrecognizedEof(location),
+            User { error } => Self::User(error),
         }
-
-
     }
-
 }
 
 impl XkbFile {
+    // part from scanner.c
     pub(crate) fn parse_string(
         ctx: &mut Context,
         string: String,
         file_name: &str,
         map: Option<&str>,
     ) -> Result<Option<XkbFile>, XkbFileParseError> {
-        let mut parser_param = ParserParam {
-            ctx,
-        };
+        let mut parser_param = ParserParam { ctx };
 
-        let lexer = crate::lexer::Lexer::new(&string);
+        let lexer = crate::lexer::Lexer::new(&string)
+            .map_err(|e| {
+
+                log::error!("This could be a file encoding issue. Supported encodings must be backward compatible with ASCII.");
+                log::error!("E.g. ISO/CEI 8859 and UTF-8 are supported but UTF-16, UTF-32 and CP1026 are not.");
+                e
+            })?;
+
         let parser = XkbFilesParser::new();
 
         // If we got a specific map, we look for it exclusively
@@ -130,25 +131,23 @@ impl XkbFile {
 
         let mut first_file = None;
 
-        for xkb_file in parser
+        // TODO: this currently skips error'ed files. Is this correct behavior?
+        let files = parser
             .parse(&mut parser_param, lexer)?
-            
-        {
-            // TODO: this currently skips error'ed files. Is this correct behavior?
-            if let Ok(xkb_file) = xkb_file {
-                if let Some(map) = map {
-                    if xkb_file.name == map {
-                        return Ok(Some(xkb_file));
-                    } else {
-                        continue;
-                    }
+            .into_iter()
+            .flatten();
+
+        for xkb_file in files {
+            if let Some(map) = map {
+                if xkb_file.name == map {
+                    return Ok(Some(xkb_file));
                 } else {
-                    if xkb_file.flags.intersects(XkbMapFlags::MAP_IS_DEFAULT) {
-                        return Ok(Some(xkb_file));
-                    } else if first_file.is_none() {
-                        first_file = Some(xkb_file);
-                    }
+                    continue;
                 }
+            } else if xkb_file.flags.intersects(XkbMapFlags::MAP_IS_DEFAULT) {
+                return Ok(Some(xkb_file));
+            } else if first_file.is_none() {
+                first_file = Some(xkb_file);
             }
         }
 
@@ -174,17 +173,19 @@ impl XkbFile {
 
         let mut string = String::new();
         if let Err(error) = file.read_to_string(&mut string) {
-            log::error!("{:?}: Couldn't read XKB file {}: {}",
+            log::error!(
+                "{:?}: Couldn't read XKB file {}: {}",
                 XkbMessageCode::NoId,
-                file_name, error);
+                file_name,
+                error
+            );
 
-            return Err(XkbFileParseError::CouldNotReadToString{
+            return Err(XkbFileParseError::CouldNotReadToString {
                 file: file_name.into(),
-                error: Rc::new(error)});
+                error: Rc::new(error),
+            });
         }
 
-        let parsed = Self::parse_string(ctx, string, file_name, map);
-
-        parsed
+        Self::parse_string(ctx, string, file_name, map)
     }
 }

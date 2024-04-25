@@ -1,14 +1,46 @@
 use logos::Logos;
 
+use crate::parser_utils::XkbFileParseError;
+
+//below fn is part of scanner-utils.c
+pub(crate) fn check_supported_char_encoding(s: &str) -> Result<&str, ()> {
+    if s.len() < 2 {
+        return Ok(s);
+    }
+
+    let bom = "\u{feff}";
+    if let Some(s) = s.strip_prefix(bom) {
+        return Ok(s);
+    }
+
+    // early detection of wrong file encoding, e.g. UTF-16 or UTF-32
+
+    let mut c = s.chars();
+    let first_char = c.next().unwrap();
+    let second_char = c.next().unwrap();
+
+    // TODO: is this necessary?
+    if first_char == '\0' || second_char == '\0' {
+        // TODO: handle case where first char not '\0'
+        log::error!("Unexpected null character");
+        return Err(());
+    }
+
+    Ok(s)
+}
+
+// TODO: return the span/location information
 pub(crate) struct Lexer<'input> {
     token_stream: logos::SpannedIter<'input, RawToken>,
 }
 
 impl<'input> Lexer<'input> {
-    pub(crate) fn new(input: &'input str) -> Self {
-        Self {
+    pub(crate) fn new(input: &'input str) -> Result<Self, XkbFileParseError> {
+        let input = check_supported_char_encoding(input)
+            .map_err(|_| XkbFileParseError::WrongInputFormat)?;
+        Ok(Self {
             token_stream: RawToken::lexer(input).spanned(),
-        }
+        })
     }
 }
 
@@ -28,7 +60,7 @@ impl<'input> Iterator for Lexer<'input> {
 #[allow(dead_code)]
 #[derive(Logos, Debug, PartialEq)]
 enum RawToken {
-    #[regex("\"[^\"]*\"", |lex| lex.slice().parse().ok().map(|t| process_string(t)), priority=5)]
+    #[regex("\"[^\"]*\"", |lex| lex.slice().parse().ok().map(process_string), priority=5)]
     String(String),
 
     #[regex(r"[[//]#][^\n]*[\n\r]?", |_| logos::Skip, priority=5)]
@@ -36,7 +68,7 @@ enum RawToken {
 
     // TODO: isgraph() characters
     #[regex(r"<[A-Za-z0-9\,\._\+=\-\(\)!@#\$%&\?\^\*`\~\[\]\{\}\|]*>", 
-        |lex| lex.slice().parse().ok().map(|t| remove_brackets(t)), priority=4)]
+        |lex| lex.slice().parse().ok().map(remove_brackets), priority=4)]
     Keyname(String),
 
     #[regex("[ \t\n]+", |_| logos::Skip, priority=3)]
@@ -218,7 +250,7 @@ fn remove_brackets(token: String) -> String {
     let mut chars = token.chars();
     chars.next();
     chars.next_back();
-    return chars.collect();
+    chars.collect()
 }
 
 fn process_string(token: String) -> String {
@@ -238,7 +270,7 @@ fn process_string(token: String) -> String {
 
             for i in 0..3 {
                 if let Some(c) = chars.next() {
-                    if c >= '0' && c <= '7' {
+                    if ('0'..='7').contains(&c) {
                         // octal digit; skip
                         continue;
                     } else if i == 0 {
@@ -250,7 +282,8 @@ fn process_string(token: String) -> String {
                             break;
                         } else if i == 0 && c == 'e' {
                             // TODO: is this correct?
-                            string = string + r"\033";
+                            // octal \033 escape => \x1b
+                            string += "\x1b";
                             break;
                         }
                     } else {

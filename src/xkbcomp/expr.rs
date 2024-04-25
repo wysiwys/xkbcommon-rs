@@ -8,7 +8,7 @@ use crate::keysyms::*;
 use crate::rust_xkbcommon::*;
 use crate::text::*;
 
-use crate::keysyms_generated_phf::KEYSYMS;
+use crate::keysyms_generated_phf::*;
 
 use crate::errors::*;
 
@@ -22,25 +22,23 @@ pub(super) struct LhsReturn {
 impl ExprDef {
     pub(super) fn resolve_lhs(self, ctx: &Context) -> Option<LhsReturn> {
         match self {
-            ExprDef::Ident(ident) => {
-                return Some(LhsReturn {
-                    elem: None,
-                    field: ctx.xkb_atom_text(ident.ident)?.into(),
-                    index: None,
-                });
-            }
+            ExprDef::Ident(ident) => Some(LhsReturn {
+                elem: None,
+                field: ctx.atom_text(ident.ident)?.into(),
+                index: None,
+            }),
             ExprDef::FieldRef(fr) => {
                 //return None if elem or field is None
 
-                let elem = ctx.xkb_atom_text(fr.element)?.into();
+                let elem = ctx.atom_text(fr.element)?.into();
 
-                let field = ctx.xkb_atom_text(fr.field)?.into();
+                let field = ctx.atom_text(fr.field)?.into();
 
-                return Some(LhsReturn {
+                Some(LhsReturn {
                     elem: Some(elem),
                     field,
                     index: None,
-                });
+                })
             }
             ExprDef::ArrayRef(ar) => {
                 // return None if:
@@ -48,21 +46,21 @@ impl ExprDef {
                 //  - field is None
 
                 let elem = match ar.element {
-                    Some(elem) => Some(ctx.xkb_atom_text(elem)?).map(|s| s.into()),
+                    Some(elem) => Some(ctx.atom_text(elem)?).map(|s| s.into()),
                     None => None,
                 };
 
-                let field = ctx.xkb_atom_text(ar.field)?.into();
+                let field = ctx.atom_text(ar.field)?.into();
 
-                return Some(LhsReturn {
+                Some(LhsReturn {
                     elem,
                     field,
                     index: Some(*ar.entry),
-                });
+                })
             }
             other => {
                 log::error!("Unexpected operator in ResolveLhs: {:?}", other.op_type());
-                return None;
+                None
             }
         }
     }
@@ -87,7 +85,7 @@ impl ExprDef {
                 }
             }
             ExprDef::Ident(ident) if ident.op == Ident => {
-                if let Some(ident) = ctx.xkb_atom_text(ident.ident) {
+                if let Some(ident) = ctx.atom_text(ident.ident) {
                     let ident_lower = ident.to_lowercase();
                     let ident = ident_lower.as_str();
 
@@ -102,8 +100,8 @@ impl ExprDef {
                 log::error!(
                     "{:?}: Default \"{}.{}\" of type boolean is unknown",
                     XkbError::InvalidExpressionType,
-                    ctx.xkb_atom_text(field_ref.element).unwrap_or_else(|| ""),
-                    ctx.xkb_atom_text(field_ref.field).unwrap_or_else(|| "")
+                    ctx.xkb_atom_text(field_ref.element),
+                    ctx.xkb_atom_text(field_ref.field)
                 );
 
                 return None;
@@ -198,19 +196,17 @@ impl ExprDef {
     {
         use ExprOpType::*;
         match self {
-            expr if expr.op_type() == Value => {
-                match expr {
-                    ExprDef::Integer(e) if e.value_type == ExprValueType::Int => Some(e.ival),
-                        expr => {
-                        log::error!(
-                            "{:?}: Found constant of type {:?} where an int was expected",
-                            XkbError::WrongFieldType,
-                            expr.value_type()
-                        );
-                    return None;
-                    }
+            expr if expr.op_type() == Value => match expr {
+                ExprDef::Integer(e) if e.value_type == ExprValueType::Int => Some(e.ival),
+                expr => {
+                    log::error!(
+                        "{:?}: Found constant of type {:?} where an int was expected",
+                        XkbError::WrongFieldType,
+                        expr.value_type()
+                    );
+                    None
                 }
-            }
+            },
             ExprDef::Ident(ident) => {
                 let resolved = lookup_fn(ident.ident, ctx).map(|x| x.into());
 
@@ -218,29 +214,29 @@ impl ExprDef {
                     log::error!(
                         "{:?}: Identifier \"{}\" of type int is unknown",
                         XkbError::InvalidIdentifier,
-                        ctx.xkb_atom_text(ident.ident).unwrap_or_else(|| "")
+                        ctx.xkb_atom_text(ident.ident)
                     );
                 }
-                return resolved;
+                resolved
             }
             ExprDef::FieldRef(fr) => {
                 log::error!(
                     "{:?}: Default \"{}.{}\" of type int is unknown",
                     XkbError::InvalidExpressionType,
-                    ctx.xkb_atom_text(fr.element).unwrap_or_else(|| ""),
-                    ctx.xkb_atom_text(fr.field).unwrap_or_else(|| "")
+                    ctx.xkb_atom_text(fr.element),
+                    ctx.xkb_atom_text(fr.field)
                 );
 
-                return None;
+                None
             }
             ExprDef::Binary(e) if [Add, Subtract, Multiply, Divide].contains(&e.op) => {
                 let l = (*e.left).resolve_integer_lookup(lookup_fn, ctx)?;
                 let r = (*e.right).resolve_integer_lookup(lookup_fn, ctx)?;
 
                 match e.op {
-                    Add => return Some(l + r),
-                    Subtract => return Some(l - r),
-                    Multiply => return Some(l * r),
+                    Add => Some(l + r),
+                    Subtract => Some(l - r),
+                    Multiply => Some(l * r),
                     Divide => {
                         if r == 0 {
                             log::error!(
@@ -251,7 +247,7 @@ impl ExprDef {
                             );
                             return None;
                         }
-                        return Some(l / r);
+                        Some(l / r)
                     }
                     _ => {
                         log::error!(
@@ -260,7 +256,7 @@ impl ExprDef {
                             e.op
                         );
 
-                        return None;
+                        None
                     }
                 }
             }
@@ -271,7 +267,7 @@ impl ExprDef {
                     XkbError::InvalidOperation
                 );
 
-                return None;
+                None
             }
             expr if expr.op_type() == Not => {
                 log::error!(
@@ -279,18 +275,18 @@ impl ExprDef {
                     XkbError::InvalidOperation
                 );
 
-                return None;
+                None
             }
             ExprDef::Unary(unary) if [Invert, Negate].contains(&unary.op) => {
                 let l = (*unary.child).resolve_integer_lookup(lookup_fn, ctx)?;
 
-                return match unary.op {
-                    Negate => Some(-1 * l),
-                    _ => Some(!l), //bitwise not?
-                };
+                match unary.op {
+                    Negate => Some(-l),
+                    _ => Some(!l), //bitwise not
+                }
             }
             ExprDef::Unary(unary) if unary.op == UnaryPlus => {
-                return (*unary.child).resolve_integer_lookup(lookup_fn, ctx);
+                (*unary.child).resolve_integer_lookup(lookup_fn, ctx)
             }
             expr => {
                 log::error!(
@@ -299,7 +295,7 @@ impl ExprDef {
                     expr.op_type()
                 );
 
-                return None;
+                None
             }
         }
     }
@@ -312,7 +308,7 @@ impl ExprDef {
     pub(crate) fn resolve_group(self, ctx: &Context) -> Option<LayoutIndex> {
         let result = self.resolve_integer_lookup::<u8, _>(
             |ident, ctx| {
-                let s = ctx.xkb_atom_text(ident)?;
+                let s = ctx.atom_text(ident)?;
                 lookup_key(&GROUP_NAMES, s).cloned()
             },
             ctx,
@@ -335,7 +331,7 @@ impl ExprDef {
     pub(crate) fn resolve_level(self, ctx: &Context) -> Option<LevelIndex> {
         let result = self.resolve_integer_lookup(
             |ident, ctx| {
-                let s = ctx.xkb_atom_text(ident)?;
+                let s = ctx.atom_text(ident)?;
                 lookup_key(&LEVEL_NAMES, s).copied()
             },
             ctx,
@@ -353,13 +349,14 @@ impl ExprDef {
         // level is zero-indexed from now on
         //
         let index = result - 1;
-        return Some(index.try_into().unwrap());
+
+        Some(index.try_into().unwrap())
     }
 
     pub(crate) fn resolve_button(self, ctx: &Context) -> Option<i64> {
         self.resolve_integer_lookup(
             |ident, ctx| {
-                let s = ctx.xkb_atom_text(ident)?;
+                let s = ctx.atom_text(ident)?;
                 lookup_key(&BUTTON_NAMES, s).copied()
             },
             ctx,
@@ -379,20 +376,17 @@ impl ExprDef {
                     XkbError::WrongFieldType,
                     expr.value_type()
                 );
-                return None;
             }
             ExprDef::Ident(ident) => {
                 log::error!(
                     "{:?}: Identifier {:?} of type string not found.",
                     XkbError::InvalidIdentifier,
-                    ctx.xkb_atom_text(ident.ident).unwrap_or("")
+                    ctx.xkb_atom_text(ident.ident)
                 );
-
-                return None;
             }
             ExprDef::FieldRef(fr) => {
-                let element = ctx.xkb_atom_text(fr.element).unwrap_or_else(|| "");
-                let field = ctx.xkb_atom_text(fr.field).unwrap_or_else(|| "");
+                let element = ctx.xkb_atom_text(fr.element);
+                let field = ctx.xkb_atom_text(fr.field);
 
                 log::error!(
                     "{:?}: Default {}.{} of type string not found",
@@ -400,8 +394,6 @@ impl ExprDef {
                     element,
                     field
                 );
-
-                return None;
             }
             _ => {
                 log::error!(
@@ -409,9 +401,10 @@ impl ExprDef {
                     XkbError::InvalidSyntax,
                     self.op_type()
                 );
-                return None;
             }
         }
+
+        None
     }
 
     pub(crate) fn resolve_enum<T, F>(self, ctx: &Context, f: F) -> Option<T>
@@ -429,9 +422,9 @@ impl ExprDef {
         }
 
         if let ExprDef::Ident(ident) = self {
-            let s = ctx.xkb_atom_text(ident.ident)?;
+            let text = ctx.atom_text(ident.ident)?;
             // looking up the enum variant
-            if let Some(value) = f(&s) {
+            if let Some(value) = f(text) {
                 return Some(value);
             } else {
                 log::error!(
@@ -468,7 +461,7 @@ impl ExprDef {
         match self {
             ExprDef::Integer(i) if i.op == Value => {
                 // TODO: ensure non-negative?
-                return Some(i.ival.try_into().unwrap());
+                Some(i.ival.try_into().unwrap())
             }
             expr if expr.op_type() == Value => {
                 log::error!(
@@ -476,7 +469,7 @@ impl ExprDef {
                     XkbError::WrongFieldType,
                     expr.value_type()
                 );
-                return None;
+                None
             }
             ExprDef::Ident(ident) => {
                 let value = lookup(ident.ident.try_into().unwrap(), ident.value_type, ctx);
@@ -489,7 +482,8 @@ impl ExprDef {
                     );
                     return None;
                 }
-                return value;
+
+                value
             }
             ExprDef::FieldRef(fr) => {
                 log::error!(
@@ -499,30 +493,41 @@ impl ExprDef {
                     ctx.xkb_atom_text(fr.field)
                 );
 
-                return None;
+                None
             }
             ExprDef::ArrayRef(_) => {
                 log::error!(
                     "{:?}: Unexpected array reference in mask expression; Expression ignored",
                     XkbError::WrongFieldType
                 );
-                return None;
+                None
             }
             ExprDef::Action(_) => {
                 log::error!(
                     "{:?}: Unexpected function use in mask expression; Expression ignored",
                     XkbError::WrongFieldType
                 );
-                return None;
+                None
             }
             ExprDef::Binary(binary) if [Add, Subtract, Multiply, Divide].contains(&binary.op) => {
                 let l = (*binary.left).resolve_mask_lookup(ctx, lookup)?;
                 let r = (*binary.right).resolve_mask_lookup(ctx, lookup)?;
 
                 match binary.op {
-                    Add => return Some(l | r),
-                    Subtract => return Some(l & !r),
-                    _ => todo!(),
+                    Add => Some(l | r),
+                    Subtract => Some(l & !r),
+                    op => {
+                        log::error!(
+                            "{:?}: Cannot {} masks; Illegal operation ignored",
+                            XkbError::InvalidOperation,
+                            match op {
+                                Multiply => "multiply",
+                                _ => "divide",
+                            }
+                        );
+
+                        None
+                    }
                 }
             }
             expr if expr.op_type() == Assign => {
@@ -531,7 +536,7 @@ impl ExprDef {
                     XkbError::InvalidOperation
                 );
 
-                return None;
+                None
             }
             ExprDef::Unary(unary) if unary.op == Invert => {
                 let v: i64 = unary.child.resolve_integer_lookup::<i64, _>(
@@ -543,7 +548,7 @@ impl ExprDef {
                 )?;
 
                 let v: T = v.try_into().unwrap();
-                return Some(!v);
+                Some(!v)
             }
             ExprDef::Unary(unary) if [UnaryPlus, Negate, Not].contains(&unary.op) => {
                 let v: Option<i64> = unary.child.resolve_integer_lookup::<i64, _>(
@@ -573,9 +578,17 @@ impl ExprDef {
 
                 // TODO: in original, this always fails.
                 // See ln. 675
-                return None;
+                None
             }
-            _ => todo!(),
+            expr => {
+                log::error!(
+                    "{:?}: Unknown operator {:?} in ResolveMask",
+                    XkbError::UnknownOperator,
+                    expr.op_type()
+                );
+
+                None
+            }
         }
     }
 
@@ -602,16 +615,16 @@ impl ExprDef {
         mods: &ModSet,
     ) -> Option<ModMask> {
         self.resolve_mask_lookup(ctx, |field, _value_type, ctx| {
-            let str = ctx.xkb_atom_text(field)?.to_lowercase();
+            let s = ctx.atom_text(field)?.to_lowercase();
 
-            match str.as_str() {
-                "all" => return Some(MOD_REAL_MASK_ALL),
-                "none" => return Some(0),
+            match s.as_str() {
+                "all" => Some(MOD_REAL_MASK_ALL),
+                "none" => Some(0),
                 _ => {
                     let ndx = mods.mod_name_to_index(field, mod_type)?;
-                    return Some(1u32 << ndx);
+                    Some(1u32 << ndx)
                 }
-            };
+            }
         })
     }
 
@@ -620,8 +633,8 @@ impl ExprDef {
 
         if op == ExprOpType::Ident {
             if let ExprDef::Ident(ref e) = self {
-                if let Some(s) = ctx.xkb_atom_text(e.ident) {
-                    if let Some(sym) = KEYSYMS.get(s) {
+                if let Some(s) = ctx.atom_text(e.ident) {
+                    if let Some(sym) = NAME_TO_KEYSYM.get(s) {
                         if *sym != xkeysym::NO_SYMBOL {
                             return Some(*sym);
                         }
@@ -639,7 +652,7 @@ impl ExprDef {
             log::warn!(
                 "{:?}: unrecognized keysym \"-0x{}\" ({})",
                 XkbWarning::UnrecognizedKeysym,
-                -1 * val,
+                -val,
                 val
             );
             return None;
@@ -664,7 +677,7 @@ impl ExprDef {
         log::warn!(
             "{:?}: unrecognized keysym \"-0x{}\" ({})",
             XkbWarning::UnrecognizedKeysym,
-            -1 * val,
+            -val,
             val
         );
 
@@ -704,6 +717,6 @@ impl ExprDef {
             return None;
         }
 
-        return ndx;
+        ndx
     }
 }

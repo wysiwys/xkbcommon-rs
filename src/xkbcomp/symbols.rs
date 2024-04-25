@@ -57,7 +57,7 @@ bitflags::bitflags! {
 struct GroupInfo {
     defined: GroupField,
     levels: Vec<Level>,
-    _type: Option<Atom>,
+    type_name: Option<Atom>,
 }
 
 impl GroupInfo {
@@ -65,7 +65,7 @@ impl GroupInfo {
         Self {
             defined: GroupField::empty(),
             levels: vec![],
-            _type: None,
+            type_name: None,
         }
     }
 }
@@ -78,12 +78,11 @@ struct KeyInfo {
     groups: BTreeMap<LayoutIndex, GroupInfo>,
     repeat: KeyRepeat,
     vmodmap: ModMask,
-    default_type: Option<Atom>,
+    default_type: Option<Atom>, // TODO: correct type?
 
     out_of_range_group_action: RangeExceedType,
     out_of_range_group_number: LayoutIndex,
 }
-
 
 impl KeyInfo {
     fn new(ctx: &mut Context) -> Self {
@@ -110,7 +109,6 @@ enum ModMapEntryKey {
 }
 
 impl ModMapEntryKey {
-
     fn key_name_text(&self, ctx: &Context) -> String {
         use ModMapEntryKey::*;
 
@@ -144,6 +142,7 @@ struct SymbolsInfo {
     name: Option<String>, // e.g. pc+us+inet(evdev)
     errors: Vec<CompileSymbolsError>,
     unrecoverable_error: Option<CompileSymbolsError>,
+    include_depth: u32,
     _merge: MergeMode, // TODO: should this be unused?
     explicit_group: Option<LayoutIndex>,
     keys: Vec<KeyInfo>,
@@ -155,7 +154,7 @@ struct SymbolsInfo {
 }
 
 impl SymbolsInfo {
-    fn new(ctx: &mut Context, actions: ActionsInfo, mods: ModSet) -> Self {
+    fn new(ctx: &mut Context, include_depth: u32, actions: ActionsInfo, mods: ModSet) -> Self {
         Self {
             _merge: MergeMode::Override,
             default_key: KeyInfo::new(ctx),
@@ -166,6 +165,7 @@ impl SymbolsInfo {
             errors: vec![],
             unrecoverable_error: None,
 
+            include_depth,
             // memset 0 in original
             group_names: BTreeMap::new(),
             name: None,
@@ -185,33 +185,41 @@ impl GroupInfo {
     fn merge(
         &mut self,
         ctx: &Context,
-        from: &GroupInfo,
+        from: &mut GroupInfo,
         clobber: bool,
         report: bool,
         group: LayoutIndex,
         key_name: Atom,
     ) -> Result<(), CompileSymbolsError> {
         // Find the type of the merged group
-        if self._type != from._type {
-            if from._type.is_none() {
+        if self.type_name != from.type_name {
+            if from.type_name.is_none() {
                 // Empty for consistency with other comparisons
-            } else if self._type.is_none() {
-                self._type = from._type;
+            } else if self.type_name.is_none() {
+                self.type_name = from.type_name;
             } else {
-                let to_use = if clobber { from._type } else { self._type };
-                let to_ignore = if clobber { self._type } else { from._type };
+                let to_use = if clobber {
+                    from.type_name
+                } else {
+                    self.type_name
+                };
+                let to_ignore = if clobber {
+                    self.type_name
+                } else {
+                    from.type_name
+                };
 
                 if report {
                     log::warn!("{:?}: Multiple definitions for group {:?} type of key {:?}; Using {:?}, ignoring {:?}",
                         XkbWarning::ConflictingKeyTypeMergingGroups,
                         group + 1, ctx.key_name_text(key_name),
-                        ctx.xkb_atom_text(to_use.unwrap_or_else(|| 0)),
-                        ctx.xkb_atom_text(to_ignore.unwrap_or_else(|| 0)));
+                        ctx.xkb_atom_text(to_use.unwrap_or(0)),
+                        ctx.xkb_atom_text(to_ignore.unwrap_or(0)));
                 }
-                self._type = to_use;
+                self.type_name = to_use;
             }
         }
-        self.defined |= from.defined.clone() & GroupField::TYPE;
+        self.defined |= from.defined & GroupField::TYPE;
 
         // Now look at the levels
 
@@ -220,31 +228,21 @@ impl GroupInfo {
         }
 
         if self.levels.is_empty() {
+            from.type_name = self.type_name;
+            *self = from.clone();
+            *from = GroupInfo::new();
             return Ok(());
         }
 
         // Merge the actions and syms
         // If `from` has extra levels, get them as well
-        for (i, from_level) in from.levels.iter().enumerate() {
+        for (i, from_level) in from.levels.iter_mut().enumerate() {
             if self.levels.get_mut(i).is_none() {
                 self.levels.push(from_level.clone());
             } else if let Some(into_level) = self.levels.get_mut(i) {
-                // TODO: should the Option::None case be compared?
-                if from_level
-                    .action
-                    .as_ref()
-                    .map(|a| a.action_type())
-                    .unwrap_or_else(|| ActionType::None)
-                    == ActionType::None
-                {
+                if from_level.action.action_type() == ActionType::None {
                     // Empty for consistency with other comparisons
-                } else if into_level
-                    .action
-                    .as_ref()
-                    .map(|a| a.action_type())
-                    .unwrap_or_else(|| ActionType::None)
-                    == ActionType::None
-                {
+                } else if into_level.action.action_type() == ActionType::None {
                     into_level.action = from_level.action.clone();
                 } else {
                     let (_use, ignore) = match clobber {
@@ -257,8 +255,8 @@ impl GroupInfo {
                             XkbWarning::ConflictingKeyAction,
                             i + 1, group + 1,
                             ctx.key_name_text(key_name),
-                            _use.as_ref().unwrap_or_else(|| &Action::None).action_type(),
-                            ignore.as_ref().unwrap_or_else(|| &Action::None).action_type());
+                            _use.action_type(),
+                            ignore.action_type());
                     }
 
                     into_level.action = _use.clone();
@@ -268,7 +266,7 @@ impl GroupInfo {
                     // empty for consistency with other comparisons
                 } else if into_level.num_syms() == 0 {
                     into_level.syms = from_level.syms.clone();
-                } else if !(from_level.syms == into_level.syms) {
+                } else if from_level.syms != into_level.syms {
                     if report {
                         log::warn!("{:?}: Multiple symbols for level {}/group {} on key {}; Using {}, ignoring {}",
                             XkbWarning::ConflictingKeySymbol,
@@ -280,10 +278,11 @@ impl GroupInfo {
 
                     if clobber {
                         *into_level = Level {
-                            action: None,
+                            action: Action::None,
                             syms: vec![],
                         };
                         into_level.syms = from_level.syms.clone();
+                        from_level.syms = vec![];
                     }
                 }
             }
@@ -318,15 +317,19 @@ fn use_new_key_field(
     false
 }
 
-#[derive(PartialEq)]
+#[derive(Debug, PartialEq)]
 enum LookupType {
     Symbols,
     Actions,
 }
 
 impl KeyInfo {
-    fn merge(&mut self, ctx: &Context, from: &KeyInfo, same_file: bool) -> Result<(), CompileSymbolsError> {
-        
+    fn merge(
+        &mut self,
+        ctx: &Context,
+        from: &mut KeyInfo,
+        same_file: bool,
+    ) -> Result<(), CompileSymbolsError> {
         let mut collide = KeyField::empty();
         let verbosity = ctx.get_log_verbosity();
         let clobber = from.merge != MergeMode::Augment;
@@ -338,8 +341,8 @@ impl KeyInfo {
         }
 
         //If `from` has extra groups, just move them to `into`
-        for (i, g_from) in from.groups.iter() {
-            if let Some(g_into) = self.groups.get_mut(&i) {
+        for (i, g_from) in from.groups.iter_mut() {
+            if let Some(g_into) = self.groups.get_mut(i) {
                 // merge group
                 g_into.merge(ctx, g_from, clobber, report, *i, self.name)?;
             } else {
@@ -425,7 +428,7 @@ impl SymbolsInfo {
 
         for iter in &mut self.keys {
             if iter.name == keyi.name {
-                return iter.merge(&builder.context, &keyi, same_file);
+                return iter.merge(&builder.context, &mut keyi, same_file);
             }
         }
 
@@ -434,7 +437,11 @@ impl SymbolsInfo {
         Ok(())
     }
 
-    fn add_mod_map_entry(&mut self, ctx: &Context, new: ModMapEntry) -> Result<(), CompileSymbolsError> {
+    fn add_mod_map_entry(
+        &mut self,
+        ctx: &Context,
+        new: ModMapEntry,
+    ) -> Result<(), CompileSymbolsError> {
         let clobber = new.merge != MergeMode::Augment;
 
         for old in self.modmaps.iter_mut() {
@@ -454,16 +461,16 @@ impl SymbolsInfo {
             if new.have_symbol {
                 log::warn!("{:?}: Symbol \"{}\" added to modifier mask for multiple modifiers; Using {}, ignoring {}", XkbWarning::ConflictingModmap,
                     new.u.keysym_text(ctx),
-                    ctx.mod_index_text(&self.mods, _use.unwrap_or_else(|| 0)),
-                    ctx.mod_index_text(&self.mods, ignore.unwrap_or_else(|| 0)));
+                    ctx.mod_index_text(&self.mods, _use.unwrap_or(0)),
+                    ctx.mod_index_text(&self.mods, ignore.unwrap_or(0)));
             } else {
                 log::warn!("{:?}: Key \"{}\" added to modifier map for multiple modifiers; Using {}, ignoring {}",
                     XkbWarning::ConflictingModmap,
                     new.u.key_name_text(ctx),
-                    ctx.mod_index_text(&self.mods, 
-                        _use.unwrap_or_else(|| 0) ),
-                    ctx.mod_index_text(&self.mods, 
-                        ignore.unwrap_or_else(|| 0)) );
+                    ctx.mod_index_text(&self.mods,
+                        _use.unwrap_or(0) ),
+                    ctx.mod_index_text(&self.mods,
+                        ignore.unwrap_or(0)) );
             }
 
             old.modifier = _use;
@@ -486,7 +493,7 @@ impl SymbolsInfo {
             self.unrecoverable_error = Some(err);
             return;
         }
-        if from.errors.len() > 0 {
+        if !from.errors.is_empty() {
             self.errors.append(&mut from.errors);
             return;
         }
@@ -498,7 +505,7 @@ impl SymbolsInfo {
         }
 
         for (i, from_group) in from.group_names.iter() {
-            if let Some(group) = self.group_names.get_mut(&i) {
+            if let Some(group) = self.group_names.get_mut(i) {
                 if merge == MergeMode::Augment {
                     continue;
                 }
@@ -546,23 +553,25 @@ impl SymbolsInfo {
         builder: &mut KeymapBuilder<TextV1>,
         include: IncludeStmt,
     ) -> Result<(), CompileSymbolsError> {
-        let first_merge = match include.iter_stmts().next() {
+        let first_merge = match include.maps.first() {
             Some(stmt) => stmt.merge,
             None => include.merge,
         };
 
         let mut included = SymbolsInfo::new(
             &mut builder.context,
+            0, //unused
             self.actions.clone(),
             self.mods.clone(),
         );
 
-        for stmt in include.iter_stmts() {
-            let file = match super::include::process_include_file(
-                &mut builder.context,
-                stmt,
-                XkbFileType::Symbols,
-            ) {
+        for stmt in include.maps.iter() {
+            // TODO: make sure the error message contains the file and/or depth
+            //  See `process_include_file`
+            let file = match builder
+                .context
+                .process_include_file(stmt, XkbFileType::Symbols)
+            {
                 Ok(file) => file,
                 Err(e) => {
                     self.unrecoverable_error = Some(e.clone().into());
@@ -572,6 +581,7 @@ impl SymbolsInfo {
 
             let mut next_incl = SymbolsInfo::new(
                 &mut builder.context,
+                self.include_depth + 1,
                 self.actions.clone(),
                 included.mods.clone(),
             );
@@ -582,7 +592,7 @@ impl SymbolsInfo {
                 next_incl.explicit_group = Some(explicit_group);
                 if explicit_group >= XKB_MAX_GROUPS.into() {
                     log::error!("{:?}: Cannot set explicit group to {} - must be between 1..{}; Ignoring group number", 
-                            XkbError::UnsupportedGroupIndex, 
+                            XkbError::UnsupportedGroupIndex,
                             explicit_group + 1,
                             XKB_MAX_GROUPS);
 
@@ -604,13 +614,10 @@ impl SymbolsInfo {
 
         if let Some(err) = self.unrecoverable_error.as_ref() {
             Err(err.clone())
-        }
-        else if self.errors.len() > 0 {
-            Err(CompileSymbolsError::MultipleErrors(Box::new(self.errors.clone())))
-        }
-        else {
+        } else if !self.errors.is_empty() {
+            Err(CompileSymbolsError::MultipleErrors(self.errors.clone()))
+        } else {
             Ok(())
-
         }
     }
 }
@@ -623,10 +630,6 @@ impl KeyInfo {
         what: LookupType,
     ) -> Result<LayoutIndex, CompileSymbolsError> {
         use LookupType::*;
-        let name = match what {
-            Symbols => "symbols",
-            Actions => "actions",
-        };
 
         if array_ndx.is_none() {
             let field = match what {
@@ -634,87 +637,75 @@ impl KeyInfo {
                 Actions => GroupField::ACTS,
             };
 
-            // TODO: order might matter here
             for (i, groupi) in self.groups.iter() {
-                if !groupi.defined.intersects(field.clone()) {
+                if !groupi.defined.intersects(field) {
                     return Ok(*i);
                 }
             }
 
             if self.groups.len() >= XKB_MAX_GROUPS.into() {
-
-                log::error!("{:?}: Too many groups of {} for key {} (max {}); Ignoring {} defined for extra groups",
+                log::error!("{:?}: Too many groups of {:?} for key {} (max {}); Ignoring {:?} defined for extra groups",
                 XkbError::UnsupportedGroupIndex,
-                name, self.info_text(ctx),
+                what, self.info_text(ctx),
                 XKB_MAX_GROUPS,
-                name);
+                what);
 
                 return Err(CompileSymbolsError::TooManyGroups);
             }
 
             // make a new group at the end
             // and return its index
-            // TODO: revisit this approach
-            let idx = match self.groups.keys().max() {
-                Some(i) => i + 1,
+            let next_idx = match self.groups.keys().max() {
+                Some(n) => n + 1,
                 None => 0,
             };
 
             let groupi = GroupInfo::new();
-            self.groups.insert(idx, groupi);
+            self.groups.insert(next_idx, groupi);
 
-            return Ok(idx);
+            Ok(next_idx)
         } else {
-            let array_ndx = array_ndx.unwrap();
-
-            let group = match array_ndx.resolve_group(ctx) {
-                Some(g) => g - 1,
-                None => {
-                    log::error!("{:?}: Illegal group index for {} of key {}
+            let group = array_ndx
+                .unwrap()
+                .resolve_group(ctx)
+                .map(|g| g - 1)
+                .ok_or_else(|| {
+                    log::error!(
+                        "{:?}: Illegal group index for {:?} of key {}
                     Definition with non-integer array index ignored",
-                    XkbError::UnsupportedGroupIndex,
-                    name, self.info_text(ctx));
+                        XkbError::UnsupportedGroupIndex,
+                        what,
+                        self.info_text(ctx)
+                    );
 
-                    return Err(CompileSymbolsError::IllegalGroupIndex);
-                }
-            };
-
+                    CompileSymbolsError::IllegalGroupIndex
+                })?;
 
             if self.groups.get(&group).is_none() {
                 let groupi = GroupInfo::new();
                 self.groups.insert(group, groupi);
             }
 
-            return Ok(group);
+            Ok(group)
         }
     }
 }
-impl SymbolsInfo {
+impl KeyInfo {
     fn add_symbols_to_key(
         &mut self,
         ctx: &Context,
-        mut keyi: Option<&mut KeyInfo>,
         array_ndx: Option<ExprDef>,
         value: ExprDef,
     ) -> Result<(), CompileSymbolsError> {
-        let ndx;
-        if let Some(ref mut keyi) = keyi {
-            ndx = keyi.get_group_index(ctx, array_ndx, LookupType::Symbols)?;
-        } else {
-            ndx = self
-                .default_key
-                .get_group_index(ctx, array_ndx, LookupType::Symbols)?;
-        }
-
-        let keyi_to_change = match keyi {
-            Some(keyi) => keyi,
-            None => &mut self.default_key,
-        };
+        let ndx = self.get_group_index(ctx, array_ndx, LookupType::Symbols)?;
 
         // get reference to the group
         // this group may have just been created,
         // and its levels may therefore be empty
-        let groupi = keyi_to_change.groups.get_mut(&ndx).expect("Group should have been created");
+        let groupi = self
+            .groups
+            .get_mut(&ndx)
+            .expect("Group should have been created");
 
         let value = match value {
             ExprDef::KeysymList(value) => value,
@@ -722,11 +713,12 @@ impl SymbolsInfo {
                 let err = XkbError::WrongFieldType;
                 log::error!(
                     "{:?}: Expected a list of symbols, found {:?}; Ignoring symbols for group {} of {}", err, value.op_type(),
-                    ndx + 1, keyi_to_change.info_text(ctx));
+                    ndx + 1, self.info_text(ctx));
 
-                return Err(CompileSymbolsError::WrongOpType{
+                return Err(CompileSymbolsError::WrongOpType {
                     expected: ExprOpType::KeysymList,
-                    found: value.op_type()});
+                    found: value.op_type(),
+                });
             }
         };
 
@@ -736,13 +728,14 @@ impl SymbolsInfo {
             log::error!(
                 "{:?}: Symbols for key {}, group {} already defined; Ignoring duplicate definition",
                 err,
-                keyi_to_change.info_text(ctx),
+                self.info_text(ctx),
                 ndx + 1
             );
 
             return Err(CompileSymbolsError::DuplicateSymbolsDef {
-                key: keyi_to_change.info_text(ctx),
-                group: ndx + 1});
+                key: self.info_text(ctx),
+                group: ndx + 1,
+            });
         }
 
         groupi.defined |= GroupField::SYMS;
@@ -750,7 +743,7 @@ impl SymbolsInfo {
         // TODO: check order here
         for syms_list in value.syms_lists.into_iter() {
             let leveli = Level {
-                action: None,
+                action: Action::None,
                 syms: syms_list,
             };
 
@@ -763,25 +756,16 @@ impl SymbolsInfo {
     fn add_actions_to_key(
         &mut self,
         ctx: &Context,
-        keyi: Option<&mut KeyInfo>,
+        mods: &ModSet,
+        actions_info: &mut ActionsInfo,
         array_ndx: Option<ExprDef>,
         value: ExprDef,
     ) -> Result<(), CompileSymbolsError> {
-        let keyi = match keyi {
-            Some(keyi) => keyi,
-            None => &mut self.default_key,
-        };
+        let info_text = self.info_text(ctx);
 
-        let info_text = keyi.info_text(ctx);
+        let ndx = self.get_group_index(ctx, array_ndx, LookupType::Actions)?;
 
-        let ndx = keyi.get_group_index(ctx, array_ndx, LookupType::Actions)?;
-
-        let groupi = keyi
-            .groups
-            .get_mut(&ndx)
-            .expect("Group not found");
-
-        // TODO: check if value is NULL?
+        let groupi = self.groups.get_mut(&ndx).expect("Group not found");
 
         let expr = match value {
             ExprDef::Actions(expr) if expr.op == ExprOpType::ActionList => expr,
@@ -790,11 +774,11 @@ impl SymbolsInfo {
                     XkbMessageCode::NoId,
                     expr.op_type(),
                     ndx,
-                    keyi.info_text(ctx));
+                    self.info_text(ctx));
 
-                return Err(CompileSymbolsError::WrongOpType{
+                return Err(CompileSymbolsError::WrongOpType {
                     expected: ExprOpType::ActionList,
-                    found: expr.op_type()
+                    found: expr.op_type(),
                 });
             }
         };
@@ -803,24 +787,25 @@ impl SymbolsInfo {
             log::warn!(
                 "{:?}: Actions for key {}, group {} already defined",
                 XkbMessageCode::NoId,
-                keyi.info_text(ctx),
+                self.info_text(ctx),
                 ndx
             );
 
-            return Err(CompileSymbolsError::DuplicateActionsDef{
-                key: keyi.info_text(ctx),
-                group: ndx});
+            return Err(CompileSymbolsError::DuplicateActionsDef {
+                key: self.info_text(ctx),
+                group: ndx,
+            });
         }
 
         let mut n_acts = 0;
         let mut actions = expr.actions.into_iter();
-        let mut action = actions.next().map(|a| *a);
+        let mut action: Option<ExprDef> = actions.next();
         while action.is_some() {
             n_acts += 1;
 
             for _ in groupi.levels.len()..n_acts {
                 groupi.levels.push(Level {
-                    action: None,
+                    action: Action::None,
                     syms: vec![],
                 });
             }
@@ -834,20 +819,18 @@ impl SymbolsInfo {
                 };
 
                 let to_act = &mut groupi.levels.get_mut(i).unwrap().action;
-                let val = self
-                    .actions
-                    .handle_action_def(ctx, &self.mods, current_action);
-                if let Err(_) = val {
+                let val = actions_info.handle_action_def(ctx, mods, current_action);
+                // TODO: add to errors list?
+                if let Ok(action) = val {
+                    *to_act = action;
+                } else {
                     log::error!("{:?}: Illegal action definition for {}; Action for group {}/level {} ignored",
                             XkbError::InvalidValue,
                             info_text,
                             ndx + 1,
                             i + 1);
-                } else if let Ok(action) = val {
-                    *to_act = action;
                 }
-
-                action = actions.next().map(|a| *a);
+                action = actions.next();
             }
         }
 
@@ -857,7 +840,8 @@ impl SymbolsInfo {
     fn set_symbols_field(
         &mut self,
         ctx: &Context,
-        keyi: Option<&mut KeyInfo>,
+        mods: &ModSet,
+        actions_info: &mut ActionsInfo,
         field: String,
         array_ndx: Option<ExprDef>,
         value: ExprDef,
@@ -866,224 +850,166 @@ impl SymbolsInfo {
         let field_str = field.as_str();
 
         if field_str == "type" {
-            let val: Atom = match value.resolve_string(ctx) {
-                Some(val) => val,
-                None => {
+            let type_name: Atom = value.resolve_string(ctx)
+            .ok_or_else(|| {
                     log::error!("{:?}: The type field of a key symbol map must be a string; Ignoring illegal type definition",
                         XkbError::WrongFieldType);
 
-                    return Err(CompileSymbolsError::CouldNotResolveString);
-                }
-            };
+                    CompileSymbolsError::CouldNotResolveString
+            })?;
 
             if array_ndx.is_none() {
-                if let Some(keyi) = keyi {
-                    keyi.default_type = Some(val);
-                    keyi.defined |= KeyField::DEFAULT_TYPE;
-                } else {
-                    // global var case
-                    self.default_key.default_type = Some(val);
-                    self.default_key.defined |= KeyField::DEFAULT_TYPE;
-                }
+                self.default_type = Some(type_name);
+                self.defined |= KeyField::DEFAULT_TYPE;
             } else if let Some(mut ndx) = array_ndx.unwrap().resolve_group(ctx) {
                 ndx -= 1;
 
-                if let Some(keyi) = keyi {
-                    keyi.groups.insert(
-                        ndx,
-                        GroupInfo {
-                            _type: Some(val),
-                            defined: GroupField::TYPE,
-                            levels: vec![],
-                        },
-                    );
+                // insert or update
+                if let Some(ref mut groupi) = self.groups.get_mut(&ndx) {
+                    groupi.type_name = Some(type_name);
+                    groupi.defined |= GroupField::TYPE;
                 } else {
-                    self.default_key.groups.insert(
+                    self.groups.insert(
                         ndx,
                         GroupInfo {
-                            _type: Some(val),
+                            type_name: Some(type_name),
                             defined: GroupField::TYPE,
                             levels: vec![],
                         },
                     );
                 }
             } else {
-                let keyi = match keyi {
-                    Some(keyi) => keyi,
-                    None => &mut self.default_key,
-                };
                 log::error!("{:?}: Illegal group index for type of key {:?}; Definition with non-integer array index ignored",
                     XkbError::UnsupportedGroupIndex,
-                    keyi.info_text(ctx)
+                    self.info_text(ctx)
                 );
 
-return Err(CompileSymbolsError::UnsupportedGroupIndex);
+                return Err(CompileSymbolsError::UnsupportedGroupIndex);
             }
         } else if field_str == "symbols" {
-            return self.add_symbols_to_key(ctx, keyi, array_ndx, value);
+            return self.add_symbols_to_key(ctx, array_ndx, value);
         } else if field_str == "actions" {
-            return self.add_actions_to_key(ctx, keyi, array_ndx, value);
+            return self.add_actions_to_key(ctx, mods, actions_info, array_ndx, value);
         } else if ["vmods", "virtualmods", "virtualmodifiers"].contains(&field_str) {
-            let keyi = match keyi {
-                Some(keyi) => keyi,
-None => &mut self.default_key,
-            };
-
             let op = value.op_type();
-            keyi.vmodmap = match value.resolve_mod_mask(ctx, ModType::VIRT, &self.mods) {
+            self.vmodmap = match value.resolve_mod_mask(ctx, ModType::VIRT, mods) {
                 Some(mask) => mask,
                 None => {
                     log::error!("{:?}: Expected a virtual modifier mask, found {:?}; Ignoring virtual modifiers definition for key {:?}",
                         XkbError::UnsupportedModifierMask,
                         op,
-                        keyi.info_text(ctx));
-                    
+                        self.info_text(ctx));
+
                     return Err(CompileSymbolsError::ExpectedVModMask);
                 }
             };
 
-            keyi.defined |= KeyField::VMODMAP;
+            self.defined |= KeyField::VMODMAP;
         } else if ["locking", "lock", "locks"].contains(&field_str) {
-            let keyi = match keyi {
-                Some(keyi) => keyi,
-                None => &mut self.default_key,
-            };
             log::warn!(
                 "{:?}: Key behaviors not supported; Ignoring locking specification for key {:?}",
                 XkbWarning::UnsupportedSymbolsField,
-                keyi.info_text(ctx)
+                self.info_text(ctx)
             );
         } else if ["radiogroup", "permanentradiogroup", "allownone"].contains(&field_str) {
-            let keyi = match keyi {
-                Some(keyi) => keyi,
-                None => &mut self.default_key,
-            };
             log::warn!(
                 "{:?}: Radio groups not supported; Ignoring radio group specification for key {:?}",
                 XkbWarning::UnsupportedSymbolsField,
-                keyi.info_text(ctx)
+                self.info_text(ctx)
             );
         } else if field_str.starts_with("overlay") || field_str.starts_with("permanentoverlay") {
-            let keyi = match keyi {
-                Some(keyi) => keyi,
-                None => &mut self.default_key,
-            };
             log::warn!(
                 "{:?}: Overlays not supported; Ignoring overlay specification for key {:?}",
                 XkbWarning::UnsupportedSymbolsField,
-                keyi.info_text(ctx)
+                self.info_text(ctx)
             );
         } else if ["repeating", "repeats", "repeat"].contains(&field_str) {
-            let keyi = match keyi {
-                Some(keyi) => keyi,
-                None => &mut self.default_key,
-            };
             // TODO: check case
-            let val = value.resolve_enum(
-                ctx, |s| KeyRepeat::lookup(s))
-                .ok_or_else(|| {
-                    log::error!("{:?}: Illegal repeat setting for {:?}; Non-boolean repeat setting ignored",
-                        XkbError::InvalidValue,
-                        keyi.info_text(ctx));
-                    CompileSymbolsError::IllegalRepeatSetting
-                })?;
-
-
-            keyi.repeat = val;
-            keyi.defined |= KeyField::REPEAT;
-        } else if ["groupswrap", "wrapgroups"].contains(&field_str) {
-
-            let keyi = match keyi {
-                Some(keyi) => keyi,
-                None => &mut self.default_key,
-            };
-            let set = value.resolve_boolean(ctx)
-                .ok_or_else(|| {
-                    log::error!("{:?}: Illegal groupsWrap setting for {}; Non-boolean value ignored",
+            let val = value.resolve_enum(ctx, KeyRepeat::lookup).ok_or_else(|| {
+                log::error!(
+                    "{:?}: Illegal repeat setting for {:?}; Non-boolean repeat setting ignored",
                     XkbError::InvalidValue,
-                    keyi.info_text(ctx));
+                    self.info_text(ctx)
+                );
+                CompileSymbolsError::IllegalRepeatSetting
+            })?;
 
-                    CompileSymbolsError::IllegalGroupsWrap
+            self.repeat = val;
+            self.defined |= KeyField::REPEAT;
+        } else if ["groupswrap", "wrapgroups"].contains(&field_str) {
+            let set = value.resolve_boolean(ctx).ok_or_else(|| {
+                log::error!(
+                    "{:?}: Illegal groupsWrap setting for {}; Non-boolean value ignored",
+                    XkbError::InvalidValue,
+                    self.info_text(ctx)
+                );
 
-                })?;
-            
+                CompileSymbolsError::IllegalGroupsWrap
+            })?;
 
-            keyi.out_of_range_group_action = match set {
+            self.out_of_range_group_action = match set {
                 true => RangeExceedType::Wrap,
-                false => RangeExceedType::Saturate
+                false => RangeExceedType::Saturate,
             };
 
-            keyi.defined |= KeyField::GROUPINFO;
-
+            self.defined |= KeyField::GROUPINFO;
         } else if ["groupsclamp", "clampgroups"].contains(&field_str) {
-            
-            let keyi = match keyi {
-                Some(keyi) => keyi,
-                None => &mut self.default_key,
+            let set = value.resolve_boolean(ctx).ok_or_else(|| {
+                log::error!(
+                    "{:?}: Illegal groupsClamp setting for {}; Non-boolean value ignored",
+                    XkbError::InvalidValue,
+                    self.info_text(ctx)
+                );
+
+                CompileSymbolsError::IllegalGroupsClamp
+            })?;
+
+            self.out_of_range_group_action = match set {
+                true => RangeExceedType::Saturate,
+                false => RangeExceedType::Wrap,
             };
-            
-            let set = value.resolve_boolean(ctx)
-                .ok_or_else(|| {
-                    log::error!("{:?}: Illegal groupsClamp setting for {}; Non-boolean vallue ignored",
-                        XkbError::InvalidValue,
-                        keyi.info_text(ctx)
-                    );
 
-                    CompileSymbolsError::IllegalGroupsClamp
-                })?;
-
-            keyi.out_of_range_group_action
-                = match set {
-                    true => RangeExceedType::Saturate,
-                    false => RangeExceedType::Wrap
-                };
-
-            keyi.defined |= KeyField::GROUPINFO;
+            self.defined |= KeyField::GROUPINFO;
         } else if ["groupsredirect", "redirectgroups"].contains(&field_str) {
-            
-            let keyi = match keyi {
-                Some(keyi) => keyi,
-                None => &mut self.default_key,
-            };
             let grp = value.resolve_group(ctx)
                 .ok_or_else(|| {
 
                     log::error!("{:?}: Illegal group index for redirect of key {}; Definition with non-integer group ignored",
                         XkbError::UnsupportedGroupIndex,
-                        keyi.info_text(ctx)
+                        self.info_text(ctx)
                     );
 
-                    return CompileSymbolsError::IllegalGroupIndexForRedirect
+                    CompileSymbolsError::IllegalGroupIndexForRedirect
 
                 })?;
-            
-            keyi.out_of_range_group_action
-                = RangeExceedType::Redirect;
-            keyi.out_of_range_group_number
-                = grp - 1;
-            keyi.defined |= KeyField::GROUPINFO;
+
+            self.out_of_range_group_action = RangeExceedType::Redirect;
+            self.out_of_range_group_number = grp - 1;
+            self.defined |= KeyField::GROUPINFO;
         } else {
-            log::error!("{:?}: Unknown field {} in a symbol interpretation; Definition ignored",
+            log::error!(
+                "{:?}: Unknown field {} in a symbol interpretation; Definition ignored",
                 XkbError::UnknownField,
-                field);
+                field
+            );
             return Err(CompileSymbolsError::UnknownFieldInSymInterp(field));
         }
 
         Ok(())
     }
+}
 
+impl SymbolsInfo {
     fn set_group_name(
         &mut self,
         ctx: &Context,
         array_ndx: Option<ExprDef>,
         value: ExprDef,
     ) -> Result<(), CompileSymbolsError> {
-
         let array_ndx = array_ndx
             .ok_or_else(|| {
             let err = XkbWarning::MissingSymbolsGroupNameIndex;
             log::warn!("{:?}: You must specify an index when specifying a group name; Group name definition without array subscript ignored", err);
-            
             CompileSymbolsError::IndexUnspecified
             })?;
 
@@ -1091,7 +1017,6 @@ None => &mut self.default_key,
         .ok_or_else(|| {
                 let err = XkbError::UnsupportedGroupIndex;
                 log::error!("{:?}: Illegal index in group name definition; Definition with non-integer array index ignored",err);
-                
                 CompileSymbolsError::IllegalIndexInGroupNameDef
             })?;
 
@@ -1127,7 +1052,11 @@ None => &mut self.default_key,
         Ok(())
     }
 
-    fn handle_global_var(&mut self, ctx: &Context, stmt: VarDef) -> Result<(), CompileSymbolsError> {
+    fn handle_global_var(
+        &mut self,
+        ctx: &Context,
+        stmt: VarDef,
+    ) -> Result<(), CompileSymbolsError> {
         let ret: Result<(), CompileSymbolsError>;
 
         let lhs = match stmt.name {
@@ -1135,15 +1064,21 @@ None => &mut self.default_key,
             None => None,
         };
 
-        let lhs = lhs
-            .ok_or_else(|| CompileSymbolsError::CouldNotResolveLhs)?;
+        let lhs = lhs.ok_or_else(|| CompileSymbolsError::CouldNotResolveLhs)?;
 
         let elem = lhs.elem.map(|e| e.to_lowercase());
         let field = lhs.field.to_lowercase();
         let field_str = field.as_str();
 
         if elem == Some("key".into()) {
-            ret = self.set_symbols_field(ctx, None, lhs.field, lhs.index, stmt.value);
+            ret = self.default_key.set_symbols_field(
+                ctx,
+                &self.mods,
+                &mut self.actions,
+                lhs.field,
+                lhs.index,
+                stmt.value,
+            );
         } else if elem.is_none() && ["name", "groupname"].contains(&field_str) {
             ret = self.set_group_name(ctx, lhs.index, stmt.value);
         } else if elem.is_none() && ["groupswrap", "wrapgroups"].contains(&field_str) {
@@ -1171,13 +1106,10 @@ None => &mut self.default_key,
             );
             ret = Ok(());
         } else {
-            ret = self.actions.set_action_field(
-                ctx, &self.mods,
-                elem, field_str, lhs.index,
-                stmt.value)
-                .map_err(|error|
-                    CompileSymbolsError::SetActionFieldFailed{error}
-                );
+            ret = self
+                .actions
+                .set_action_field(ctx, &self.mods, elem, field_str, lhs.index, stmt.value)
+                .map_err(|error| CompileSymbolsError::SetActionFieldFailed { error });
         }
 
         ret
@@ -1192,34 +1124,32 @@ None => &mut self.default_key,
         let mut ok = Ok(());
 
         for def in defs {
-            if let Some(ref name) = def.name {
-                if name.op_type() == ExprOpType::FieldRef {
-                    log::error!("{:?}: Cannot set a global default value from within a key statement; Move statements to the global file scope",
-                        // TODO: is error code correct?
-                        XkbError::GlobalDefaultsWrongScope
-                        );
-                    continue;
-                }
-            }
-
             let field;
             let array_ndx;
+            let elem;
 
             if let Some(name) = def.name {
-                let lhs = name.resolve_lhs(ctx);
-                ok = match lhs.is_some() {
-                    true => Ok(()),
-                    false => Err(CompileSymbolsError::CouldNotResolveLhs),
-                };
-
-                if let Some(lhs) = lhs {
+                if let Some(lhs) = name.resolve_lhs(ctx) {
                     field = lhs.field;
                     array_ndx = lhs.index;
+                    elem = lhs.elem;
+
+                    ok = Ok(())
                 } else {
-                    continue; //`field` would be uninitialized here,
-                              //but would not be used later,
-                              //so just continue here instead
+                    ok = Err(CompileSymbolsError::CouldNotResolveLhs);
+                    // nothing else is done with this value, so just continue
+                    continue;
                 }
+
+                if let Some(elem) = elem {
+                    log::error!("{:?}: Cannot set global defaults for \"{}\" element within a key statement: move statements to the global file scope. Assignment to \"{}.{}\" ignored.",
+                        XkbError::GlobalDefaultsWrongScope,
+                        elem, elem, field);
+
+                    ok = Err(CompileSymbolsError::GlobalDefaultsWrongScope);
+                    continue;
+                }
+
             // case where no name
             } else {
                 // TODO: ensure we don't need to check for None
@@ -1233,14 +1163,25 @@ None => &mut self.default_key,
             }
 
             if ok.is_ok() {
-                ok = self.set_symbols_field(ctx, Some(keyi), field, array_ndx, def.value);
+                ok = keyi.set_symbols_field(
+                    ctx,
+                    &self.mods,
+                    &mut self.actions,
+                    field,
+                    array_ndx,
+                    def.value,
+                );
             }
         }
 
         ok
     }
 
-    fn set_explicit_group(&self, ctx: &Context, keyi: &mut KeyInfo) -> Result<(), CompileSymbolsError> {
+    fn set_explicit_group(
+        &self,
+        ctx: &Context,
+        keyi: &mut KeyInfo,
+    ) -> Result<(), CompileSymbolsError> {
         let mut warn: bool = false;
 
         let explicit_group = match self.explicit_group {
@@ -1265,9 +1206,8 @@ None => &mut self.default_key,
             log::warn!("{:?}: For the map {} an explicit group specified, but key {} has more than one group defined; All groups except first one will be ignored",
                     XkbWarning::MultipleGroupsAtOnce,
                     self.name
-                        .as_ref()
-                        .map(|n| n.as_str())
-                        .unwrap_or_else(|| ""),
+                        .as_deref()
+                        .unwrap_or(""),
                     keyi.info_text(ctx));
         }
 
@@ -1293,9 +1233,9 @@ None => &mut self.default_key,
         keyi.name = stmt.key_name;
 
         // copy defaults
-        for (i, groupi)  in keyi.groups.iter_mut() {
+        for (i, groupi) in keyi.groups.iter_mut() {
             if let Some(default) = self.default_key.groups.get(i) {
-            *groupi = default.clone();
+                *groupi = default.clone();
             }
         }
 
@@ -1317,8 +1257,12 @@ None => &mut self.default_key,
         Ok(())
     }
 
-    fn handle_mod_map_def(&mut self, ctx: &Context, def: ModMapDef) -> Result<(), CompileSymbolsError> {
-        let modifier_name = ctx.xkb_atom_text(def.modifier).map(|n| n.to_lowercase());
+    fn handle_mod_map_def(
+        &mut self,
+        ctx: &Context,
+        def: ModMapDef,
+    ) -> Result<(), CompileSymbolsError> {
+        let modifier_name = ctx.atom_text(def.modifier).map(|n| n.to_lowercase());
 
         let ndx = match modifier_name {
             Some(n) if n.as_str() == "none" => None,
@@ -1333,7 +1277,6 @@ None => &mut self.default_key,
                 }
                 mod_ndx
             }
-        
         };
 
         let mut ok = Ok(());
@@ -1358,7 +1301,7 @@ None => &mut self.default_key,
                         log::error!("{:?}: Modmap entries may contain only key names or keysyms; Illegal definition for {} modifier ignored",
                         XkbError::InvalidModmapEntry,
                         match ndx {
-                            Some(ndx) 
+                            Some(ndx)
                                 => ctx.mod_index_text(&self.mods,ndx),
                             None => ""});
 
@@ -1401,7 +1344,8 @@ None => &mut self.default_key,
                     .map_err(|e| e.into()),
                 Decl::ModMap(s) => self.handle_mod_map_def(&builder.context, s),
                 _ => {
-                    log::error!("{:?}: Symbols file may not include other types; Ignoring {}",
+                    log::error!(
+                        "{:?}: Symbols file may not include other types; Ignoring {}",
                         XkbError::WrongStatementType,
                         stmt.stmt_type()
                     );
@@ -1409,6 +1353,7 @@ None => &mut self.default_key,
                 }
             };
 
+            // TODO: in include, the error is pushed twice
             if let Err(e) = ok {
                 self.errors.push(e);
             }
@@ -1433,104 +1378,94 @@ impl KeymapBuilder<TextV1> {
     /// which matches the keysym Caps_Lock.
     /// Since there can be many keys which generate the keysym,
     /// the key is chosen first by lowest group in which the keysym
-    /// appears, then by lowest, level, then by lowest key code.
-    fn find_key_for_symbol_mut<'k>(&'k mut self, sym: Keysym) -> Option<&'k mut KeyBuilder> {
-        let mut got_one_group;
-        let mut got_one_level;
+    /// appears, then by lowest level, then by lowest key code.
+    fn find_key_for_symbol_mut(&mut self, sym: Keysym) -> Option<&mut KeyBuilder> {
+        let found_kc = {
+            // Get mapping of (keycode, layout_idx, level_idx) -> &Level,
+            // so that it can be sorted in the correct order
+            let mut mapping = self
+                .keys
+                .iter()
+                .filter_map(|(kc, key)| key.groups.as_ref().map(|groups| (kc, groups)))
+                .flat_map(|(kc, groups)| {
+                    groups
+                        .iter()
+                        .enumerate()
+                        .map(move |(i, group)| (kc, i, group))
+                })
+                .flat_map(|(kc, i, group)| {
+                    group
+                        .levels
+                        .iter()
+                        .enumerate()
+                        .map(move |(j, level)| (kc, i, j, level))
+                })
+                .collect::<Vec<(&RawKeycode, LayoutIndex, LevelIndex, &Level)>>();
 
-        let mut group = 0;
-        let mut level;
+            // Don't need to sort by keycode, because already in sorted order (ascending)
+            mapping.sort_by_key(|k| (k.1, k.2));
 
-        let mut found_kc = None;
+            let found_kc = mapping
+                .iter()
+                .find(|(_, _, _, level)| {
+                    let syms = level.syms.iter().flatten().collect::<Vec<_>>();
+                    syms.len() == 1 && *syms[0] == sym
+                })
+                .map(|k| *k.0);
 
-        loop {
-            level = 0;
-            got_one_group = false;
-            loop {
-                got_one_level = false;
-                for kc in self.keys.keys() {
-                    if let Some(groups) = self.keys[kc].groups.as_ref() {
-                        if group < groups.len() && level < groups[group].levels.len() {
-                            got_one_group = true;
-                            got_one_level = true;
+            found_kc
+        };
 
-                            let syms = &groups[group].levels[level].syms;
-
-                            if syms.len() == 1 && syms[0] == Some(sym) {
-                                found_kc = Some(*kc);
-                            }
-                        }
-                    }
-                }
-
-                level += 1;
-                if !got_one_level || found_kc.is_some() {
-                    break;
-                }
-            }
-            group += 1;
-            if !got_one_group || found_kc.is_some() {
-                break;
-            }
-        }
-
-        found_kc.map(|kc| {
-            self.keys
-                .get_mut(&kc)
-                .expect("algorithm to find key for symbol failed")
-        })
+        found_kc.and_then(|kc| self.keys.get_mut(&kc))
     }
 
     fn find_type_for_group(&mut self, keyi: &KeyInfo, group: LayoutIndex) -> (bool, usize) {
-        let mut explicit_type = true;
-
         let groupi = keyi.groups.get(&group).expect("No such group");
 
-        let type_name = match groupi._type {
-            Some(n) => Some(n),
-            None => match keyi.default_type {
-                Some(t) => Some(t),
-                None => {
-                    let type_name = groupi.find_automatic_type(&mut self.context);
-                    if type_name.is_some() {
-                        explicit_type = false;
-                    }
+        let mut explicit_type = true;
 
-                    type_name
+        let type_name = groupi.type_name.or_else(|| {
+            keyi.default_type.or_else(|| {
+                let type_name = groupi.find_automatic_type(&mut self.context);
+                if type_name.is_some() {
+                    explicit_type = false;
                 }
-            },
-        };
 
-        if type_name.is_none() {
-            log::warn!("{:?}: Couldn't find an automatic type for key '{}' group '{} with {} levels; Using the default type", 
-                    XkbWarning::CannotInferKeyType, 
-                    self.context.key_name_text(keyi.name), 
+                type_name
+            })
+        });
+
+        let type_name = match type_name {
+            Some(n) => n,
+            None => {
+                log::warn!("{:?}: Couldn't find an automatic type for key '{}' group '{} with {} levels; Using the default type", 
+                    XkbWarning::CannotInferKeyType,
+                    self.context.key_name_text(keyi.name),
                         group + 1,
                     groupi.levels.len());
 
-            // Index 0 is guaranteed to contain something,
-            // usually ONE_LEVEL or at least some default
-            // one-level type.
-            return (explicit_type, 0);
-        }
-        let type_name = type_name.unwrap();
+                // Index 0 is guaranteed to contain something,
+                // usually ONE_LEVEL or at least some default
+                // one-level type.
+                return (explicit_type, 0);
+            }
+        };
 
-        let i = self.types.iter().position(|t| t.name == type_name);
-
-        if i.is_none() {
-            log::warn!("{:?}: The type \"{:?}\" for key '{}' group {} was not previously defined; Using the default type",
+        let i = match self.types.iter().position(|t| t.name == type_name) {
+            Some(i) => i,
+            _ => {
+                log::warn!("{:?}: The type \"{:?}\" for key '{}' group {} was not previously defined; Using the default type",
                     XkbWarning::UndefinedKeyType,
                     self.context.xkb_atom_text(type_name),
                     self.context.key_name_text(keyi.name),
                     group + 1);
 
-            // Index 0 is guaranteed to contain something,
-            // usually ONE_LEVEL or at least some default
-            // one-level type.
-            return (explicit_type, 0);
-        }
-
-        let i = i.unwrap();
+                // Index 0 is guaranteed to contain something,
+                // usually ONE_LEVEL or at least some default
+                // one-level type.
+                return (explicit_type, 0);
+            }
+        };
 
         (explicit_type, i)
     }
@@ -1540,7 +1475,7 @@ impl GroupInfo {
     fn get_first_sym_at_level(&self, level: LevelIndex) -> Option<Keysym> {
         let level = self.levels.get(level)?;
 
-        level.syms.get(0).copied()?
+        level.syms.first().copied()?
     }
 
     fn find_automatic_type(&self, ctx: &mut Context) -> Option<Atom> {
@@ -1550,15 +1485,11 @@ impl GroupInfo {
             return Some(ctx.atom_intern("ONE_LEVEL".into()));
         }
 
-        let sym0 = self
-            .get_first_sym_at_level(0)
-            .unwrap_or_else(|| xkeysym::NO_SYMBOL);
-        let sym1 = self
-            .get_first_sym_at_level(1)
-            .unwrap_or_else(|| xkeysym::NO_SYMBOL);
+        let sym0 = self.get_first_sym_at_level(0).unwrap_or(xkeysym::NO_SYMBOL);
+        let sym1 = self.get_first_sym_at_level(1).unwrap_or(xkeysym::NO_SYMBOL);
 
         if width == 2 {
-            if keysym_is_lower(sym0) && keysym_is_upper(sym1) {
+            if keysym_is_lower(&sym0) && keysym_is_upper(&sym1) {
                 return Some(ctx.atom_intern("ALPHABETIC".into()));
             }
             if sym0.is_keypad_key() || sym1.is_keypad_key() {
@@ -1569,18 +1500,13 @@ impl GroupInfo {
         }
 
         if width <= 4 {
-            if keysym_is_lower(sym0) && keysym_is_upper(sym1) {
-                let sym2 = self
-                    .get_first_sym_at_level(2)
-                    .unwrap_or_else(|| xkeysym::NO_SYMBOL);
-                let sym3 = if width == 4 {
-                    self.get_first_sym_at_level(3)
-                } else {
-                    None
+            if keysym_is_lower(&sym0) && keysym_is_upper(&sym1) {
+                let sym2 = self.get_first_sym_at_level(2).unwrap_or(xkeysym::NO_SYMBOL);
+                let sym3 = match width == 4 {
+                    true => self.get_first_sym_at_level(3).unwrap_or(xkeysym::NO_SYMBOL),
+                    false => xkeysym::NO_SYMBOL,
                 };
-                let sym3 = sym3.unwrap_or_else(|| xkeysym::NO_SYMBOL);
-
-                if keysym_is_lower(sym2) && keysym_is_upper(sym3) {
+                if keysym_is_lower(&sym2) && keysym_is_upper(&sym3) {
                     return Some(ctx.atom_intern("FOUR_LEVEL_ALPHABETIC".into()));
                 }
 
@@ -1613,7 +1539,7 @@ impl KeyInfo {
             .count();
 
         if num_groups == 0 {
-            return Err(todo!());
+            return Err(CompileSymbolsError::NoGroupsCreated);
         }
 
         // If there are empty groups between non-empty ones,
@@ -1623,7 +1549,7 @@ impl KeyInfo {
 
         let group0 = self.groups.get(&0).unwrap().clone();
 
-        for i in 0..self.groups.keys().max().copied().unwrap_or_else(|| 0) {
+        for i in 0..self.groups.keys().max().copied().unwrap_or(0) {
             if let Some(groupi) = self.groups.get_mut(&i) {
                 if i >= 1 && groupi.defined.is_empty() {
                     *groupi = group0.clone();
@@ -1632,77 +1558,63 @@ impl KeyInfo {
                 }
             } else {
                 // Insert new entry into b tree
-                // TODO: is this right? See original
                 self.groups.insert(i, group0.clone());
             }
         }
 
         // Find and assign the groups' types in the keymap.
-        // TODO: order may matter
-        let mut intersects = false;
         let mut groups = vec![];
 
-        let group_indices: Vec<usize> = self.groups.keys().map(|x| *x).collect();
-        for i in group_indices.iter() {
-            if self.groups[i].defined.intersects(GroupField::ACTS) {
-                // moved from below
-                intersects = true;
-            }
+        let group_indices: Vec<usize> = self.groups.keys().copied().collect();
 
+        // check for intersection
+        for i in group_indices.iter() {
             let (explicit_type, type_index) = builder.find_type_for_group(&self, *i);
 
             // Always have as many levels as the type specifies
             let num_levels = builder.types[type_index].num_levels;
-            let type_name = builder.types[type_index].num_levels;
+            let type_name = builder.types[type_index].name;
             if num_levels < self.groups[i].levels.len() {
                 log::warn!(
                     "{:?}: Type {:?} has {} levels, but {} has {} levels; Ignoring extra symbols",
                     XkbWarning::ExtraSymbolsIgnored,
-                    builder
-                        .context
-                        .xkb_atom_text(type_name)
-                        .unwrap_or_else(|| "")
-                        .to_owned(),
+                    builder.context.xkb_atom_text(type_name),
                     num_levels,
                     self.info_text(&builder.context),
                     self.groups[&i].levels.len()
                 );
 
+                // ClearLevelInfo
                 self.groups.get_mut(i).unwrap().levels.truncate(num_levels);
+            } else {
+                // Resize in the other direction
+                // This is the equivalent of `darray_resize0(groupi->levels, type->num_levels)`,
+                // which resizes and fills with zeroes
+                // Essentially, we make blank levels to fill the rest of self.groups[&i]'s levels
+                for _ in self.groups[i].levels.len()..num_levels {
+                    let levels = &mut self.groups.get_mut(i).unwrap().levels;
+
+                    levels.push(Level {
+                        action: Action::None,
+                        syms: vec![],
+                    });
+                }
             }
 
-            // TODO: rewrite this
-            // This is the equivalent of `darray_resize0(groupi->levels, type->num_levels)`,
-            // which resizes and fills with zeroes
-            // Essentially, we make blank levels to fill the rest of self.groups[&i]'s levels
-            for _ in self.groups[i].levels.len()..num_levels {
-                let levels = &mut self.groups.get_mut(i).unwrap().levels;
-
-                levels.push(Level {
-                    action: None,
-                    syms: vec![],
-                });
-            }
-
+            // append a group to the new groups list
             groups.push(Group {
                 explicit_type,
                 key_type: type_index,
-                levels: vec![],
+                // copy levels
+                levels: self.groups[i].levels.clone(),
             });
         }
+        // Moved from above for borrowing reasons
+        let text = builder.context.atom_text(self.name).map(|x| x.to_owned());
 
-        // Copy levels
-        // TODO: ensure order
-        for (i, groupi) in self.groups {
-            groups[i].levels = groupi.levels;
-        }
-
-        // Moved from above
-        let key = builder.get_key_by_name_mut(self.name, false);
-
-        let key = match key {
-            Some(key) => key,
-            None => {
+        let key = builder
+            .get_key_by_name_mut(self.name, false)
+            .ok_or_else(|| {
                 let err = XkbWarning::UndefinedKeycode;
 
                 log::warn!(
@@ -1711,9 +1623,8 @@ impl KeyInfo {
                     info_text
                 );
 
-                return Err(CompileSymbolsError::KeyNotFoundInKeycodes(builder.context.xkb_atom_text(self.name).map(|x| x.into())));
-            }
-        };
+                CompileSymbolsError::KeyNotFoundInKeycodes(text.clone())
+            })?;
 
         key.groups = Some(groups);
         key.out_of_range_group_number = Some(self.out_of_range_group_number);
@@ -1726,10 +1637,14 @@ impl KeyInfo {
 
         if self.repeat != KeyRepeat::Undefined {
             key.repeats = self.repeat == KeyRepeat::Yes;
-            key.explicit |= ExplicitComponents::VMODMAP
+            key.explicit |= ExplicitComponents::REPEAT
         };
 
-        if intersects {
+        if self
+            .groups
+            .values()
+            .any(|g| g.defined.intersects(GroupField::ACTS))
+        {
             key.explicit |= ExplicitComponents::INTERP
         };
 
@@ -1754,7 +1669,7 @@ impl ModMapEntry {
                         log::warn!("{:?}: Key {} not found in keycodes; Modifier map entry for {} not updated",
                             XkbWarning::UndefinedKeycode,
                             name,
-                            builder.context.mod_index_text(&info_mods, self.modifier.unwrap_or_else(|| 0)));
+                            builder.context.mod_index_text(info_mods, self.modifier.unwrap_or(0)));
                         return Err(CompileSymbolsError::NoSuchKeyForName(name));
                     }
                 }
@@ -1766,14 +1681,16 @@ impl ModMapEntry {
                     log::warn!("{:?}: Key \"{}\" not found in symbol map; Modifier map entry for {} not updated",
                             XkbWarning::UnresolvedKeymapSymbol,
                             self.u.keysym_text(&builder.context),
-                            builder.context.mod_index_text(&builder.mods, self.modifier.unwrap_or_else(|| 0)));
+                            builder.context.mod_index_text(info_mods, self.modifier.unwrap_or(0)));
                     return Err(CompileSymbolsError::NoSuchKeyForSym(s));
                 }
             },
         };
 
         if let Some(m) = self.modifier {
-            key_to_edit.modmap |= 1 << m;
+            if m != XKB_MOD_NONE {
+                key_to_edit.modmap |= 1 << m;
+            }
         }
 
         Ok(())
@@ -1791,27 +1708,26 @@ impl SymbolsInfo {
 
         builder.mods = self.mods.clone();
 
-        builder.group_names = self.group_names.values().map(|n| *n).collect();
-        for keyi in self.keys {
+        builder.group_names = self.group_names.values().copied().collect();
+        self.keys.into_iter().for_each(|keyi| {
             if let Err(e) = keyi.copy_symbols_def_to_keymap(builder) {
                 self.errors.push(e);
             }
-        }
+        });
 
         if builder.context.get_log_verbosity() > 3 {
-
-            builder.keys
+            builder
+                .keys
                 .iter()
                 //.filter(|(_, k)| k.name != XKB_ATOM_NONE)
-                .filter(|(_,k)| k.groups.is_none() || k.groups.as_ref().unwrap().len() < 1)
-                .for_each(|(_,key)| {
-                    log::info!("{:?}: No symbols defined for {}",
+                .filter(|(_, k)| k.groups.is_none() || k.groups.as_ref().unwrap().is_empty())
+                .for_each(|(_, key)| {
+                    log::info!(
+                        "{:?}: No symbols defined for {}",
                         XkbMessageCode::NoId,
                         builder.context.key_name_text(key.name)
                     );
-
                 });
-
         }
 
         for mm in self.modmaps {
@@ -1834,21 +1750,16 @@ pub(super) fn compile_symbols(
     let ctx = &mut builder.context;
 
     let actions = ActionsInfo::new();
-    let mut info = SymbolsInfo::new(ctx, actions, builder.mods.clone());
+    let mut info = SymbolsInfo::new(ctx, 0, actions, builder.mods.clone());
     info.default_key.merge = merge;
 
     info.handle_symbols_file(builder, file, merge);
 
     if let Some(err) = info.unrecoverable_error {
-        return Err(err);
-    }
-    else if info.errors.len() != 0 {
-        return Err(CompileSymbolsError::MultipleErrors(Box::new(info.errors)));
-    }
-
-    if let Err(err) = info.copy_symbols_to_keymap(builder) {
-        return Err(err);
+        return Err(err); //e.g. error from handling include
+    } else if !info.errors.is_empty() {
+        return Err(CompileSymbolsError::MultipleErrors(info.errors));
     }
 
-    Ok(())
+    info.copy_symbols_to_keymap(builder)
 }

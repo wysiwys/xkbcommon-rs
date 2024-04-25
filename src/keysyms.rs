@@ -1,47 +1,209 @@
+#[cfg(test)]
+use xkeysym::RawKeysym;
+
 use crate::rust_xkbcommon::*;
 
-use crate::keysyms_generated_phf::KEYSYMS;
-use crate::text::lookup_value;
+use crate::keysyms_generated_phf::{KEYSYM_TO_NAME, NAME_TO_KEYSYM};
 
 pub const XKB_KEYSYM_MIN: u32 = 0;
+pub const XKB_KEYSYM_MIN_ASSIGNED: u32 = 0;
+pub const XKB_KEYSYM_MAX_ASSIGNED: u32 = 0x1008ffb8;
+pub const XKB_KEYSYM_MIN_EXPLICIT: u32 = 0;
+pub const XKB_KEYSYM_MAX_EXPLICIT: u32 = 0x1008ffb8;
+pub const XKB_KEYSYM_COUNT_EXPLICIT: usize = 2446;
+pub const XKB_KEYSYM_UNICODE_OFFSET: u32 = 0x01000000;
+pub const XKB_KEYSYM_UNICODE_MIN: u32 = 0x01000100;
+pub const XKB_KEYSYM_UNICODE_MAX: u32 = 0x0110ffff;
+pub const XKB_KEYSYM_NAME_MAX_SIZE: usize = 27;
 
-pub fn keysym_get_name(ks: &Keysym) -> String {
+fn find_keysym_name(ks: &Keysym) -> Option<&'static str> {
+    if ks.raw() > XKB_KEYSYM_MAX_EXPLICIT {
+        return None;
+    }
+    
+    let found_idx = KEYSYM_TO_NAME.binary_search_by_key(
+        ks,
+        |&(a,_)| a,
+        ).ok()?;
+
+    let found_sym = KEYSYM_TO_NAME[found_idx].0.raw();
+    let mut found_name = KEYSYM_TO_NAME[found_idx].1;
+
+    // Get the first sym that matches
+    let mut try_idx = match found_idx {
+        0 => return Some(found_name),
+        idx => idx - 1 };
+
+    while KEYSYM_TO_NAME[try_idx].0.raw() == found_sym {
+        found_name = KEYSYM_TO_NAME[try_idx].1;
+        try_idx = match try_idx {
+            0 => return Some(found_name),
+            idx => idx - 1 };
+        
+    }
+    Some(found_name)
+}
+pub(crate) fn get_unicode_name(ks: u32) -> String {
+    match (ks & 0xff0000) != 0 {
+        true => format!("U{:08X}", ks & 0xffffff),
+        false => format!("U{:04X}", ks & 0xffffff),
+    }
+}
+
+pub fn keysym_get_name(ks: &Keysym) -> Option<String> {
+
+    if let Some(sym) = find_keysym_name(ks) {
+        return Some(sym.into());
+    }
     let ks: u32 = ks.raw();
 
     if ks > XKB_KEYSYM_MAX {
-        return "Invalid".into();
-    }
-
-    if let Some(sym) = lookup_value(&KEYSYMS, ks, false) {
-        return sym.into();
+        return None;
     }
 
     // Unnamed Unicode codepoint.
-    if ks >= 0x01000100 && ks <= 0x0110ffff {
-        return match (ks & 0xff0000) != 0 {
-            true => format!("U{:08X}", ks & 0xffffff),
-            false => format!("U{:04X}", ks & 0xffffff),
-        };
+    if (XKB_KEYSYM_UNICODE_MIN..=XKB_KEYSYM_UNICODE_MAX).contains(&ks) {
+        return Some(get_unicode_name(ks));
     }
 
     // Unnamed, non-unicode symbol (shouldn't generally happen)
-    return format!("{:#x}", ks);
+    Some(format!("{:#010x}", ks))
 }
 
+// TODO: move test functions/structs to separate module
+#[cfg(test)]
+pub(crate) fn keysym_is_assigned(ks: &Keysym) -> bool {
+    (XKB_KEYSYM_UNICODE_MIN..=XKB_KEYSYM_UNICODE_MAX).contains(&ks.raw())
+        || find_keysym_name(ks).is_some()
+}
+
+#[cfg(test)]
+pub(crate) struct KeysymIterator {
+    explicit: bool,       // If true, traverse only explicitly named keysyms
+    index: Option<usize>, // Current index in keysym_to_name
+    // TODO: make this Option<usize>
+    keysym: RawKeysym,
+}
+
+#[cfg(test)]
+impl KeysymIterator {
+    pub(crate) fn new(iterate_only_explicit_keysyms: bool) -> Self {
+        Self {
+            explicit: iterate_only_explicit_keysyms,
+            index: None,
+            keysym: XKB_KEYSYM_UNICODE_MAX,
+        }
+    }
+
+    // TODO: delete me
+    fn get_keysym(&self) -> RawKeysym {
+        self.keysym
+    }
+
+
+    /*
+    pub(crate) fn is_explicitly_named(&self) -> bool {
+        // ensure >= 0
+        let index: usize = match self.index {
+            Some(index) if index < KEYSYM_TO_NAME.len() => index,
+            _ => return false,
+        };
+
+        self.explicit
+            || KEYSYM_TO_NAME.get(index)
+                .map(|(sym, _)| sym.raw() == self.keysym)
+                .unwrap_or(false)
+    }
+    */
+
+    pub(crate) fn get_name(&self) -> Option<String> {
+        let index: usize = match self.index {
+            Some(index) if index < KEYSYM_TO_NAME.len() => index,
+            _ => return None,
+        };
+        if self.explicit
+            || KEYSYM_TO_NAME
+                .get(index)
+                .map(|(sym, _)| sym.raw() == self.keysym)
+                .unwrap_or(false)
+        {
+            return KEYSYM_TO_NAME.get(index).map(|(_, name)| name.to_string());
+        }
+
+        Some(get_unicode_name(self.keysym))
+    }
+
+    pub(crate) fn next(&mut self) -> Option<RawKeysym> {
+        if let Some(index) = self.index {
+            if index >= KEYSYM_TO_NAME.len() - 1 {
+                return None;
+            }
+        }
+
+        // Next keysym
+        if self.explicit
+            || self.keysym >= XKB_KEYSYM_UNICODE_MAX
+            || self
+                .index
+                .and_then(|i| KEYSYM_TO_NAME.get(i + 1))
+                .map(|(sym,_ )| sym.raw() < XKB_KEYSYM_UNICODE_MIN)
+                .unwrap_or(false)
+        {
+            // explicitly named keysyms only
+            // increment
+            if let Some(ref mut index) = self.index {
+                *index += 1;
+            } else {
+                self.index = Some(0);
+            }
+            self.keysym = KEYSYM_TO_NAME.get(self.index.unwrap()).unwrap().0.raw();
+           
+            
+            assert!(
+                self.explicit
+                    || self.keysym <= XKB_KEYSYM_UNICODE_MIN
+                    || self.keysym >= XKB_KEYSYM_UNICODE_MAX, 
+                    "{:?}", Keysym::from(self.keysym)
+            );
+            
+        } else {
+            // Unicode keysyms
+            // NOTE: Unicode keysyms are within keysym_to_name keysyms range.
+            if let Some(ref mut index) = self.index {
+                if self.keysym >= KEYSYM_TO_NAME.get(*index).unwrap().0.raw() {
+                    *index += 1;
+                }
+            }
+            if self.keysym >= XKB_KEYSYM_UNICODE_MIN {
+                // Continue Unicode keysyms
+                self.keysym += 1;
+            } else {
+                self.keysym = XKB_KEYSYM_UNICODE_MIN;
+            }
+        }
+
+        Some(self.get_keysym())
+    }
+}
 fn parse_keysym_hex(s: &str) -> Option<u32> {
     let mut result: u32 = 0;
 
     let mut chars = s.chars();
     for _ in 0..8 {
         if let Some(c) = chars.next() {
+
+            // TODO: is this needed?
+            if c == '\0' {
+                break;
+            }
             let c_u32 = u32::from(c);
 
             result <<= 4;
-            if '0' <= c && c <= '9' {
+            if c.is_ascii_digit() {
                 result += c_u32 - u32::from('0');
-            } else if 'a' <= c && c <= 'f' {
+            } else if ('a'..='f').contains(&c) {
                 result += 10 + c_u32 - u32::from('a');
-            } else if 'A' <= c && c <= 'F' {
+            } else if ('A'..='F').contains(&c) {
                 result += 10 + c_u32 - u32::from('A');
             } else {
                 return None;
@@ -50,7 +212,7 @@ fn parse_keysym_hex(s: &str) -> Option<u32> {
     }
 
     // TODO: check this bound
-    if (1..8).contains(&s.len()) {
+    if (1..=8).contains(&s.len()) {
         return Some(result);
     }
 
@@ -61,6 +223,7 @@ pub fn keysym_from_name<F>(name: &str, flags: F) -> Option<Keysym>
 where
     F: TryInto<KeysymFlags>,
 {
+    // TODO: updated keysym_from_name and associated functions
     let flags: KeysymFlags = flags.try_into().ok()?;
     let icase = flags.intersects(KeysymFlags::CASE_INSENSITIVE);
 
@@ -69,13 +232,48 @@ where
     }
 
     if !icase {
-        if let Some(sym) = KEYSYMS.get(name) {
-            return Some(sym.clone());
+        if let Some(sym) = NAME_TO_KEYSYM.get(name) {
+            return Some(*sym);
         }
     } else {
-        // TODO: Find the correct keysym for case-insensitive match
 
-        todo!()
+        // TODO: clean this up
+        let mut entry = None;
+        let name_lower = name.to_lowercase();
+        let mut lo = 0;
+        let mut hi = NAME_TO_KEYSYM.len() - 1;
+
+        // assumes name_to_keysym is sorted by istrcmp`
+
+        while hi >= lo {
+            let mid = (lo + hi) / 2;
+            let (mid_name_lower, sym) = NAME_TO_KEYSYM.index(mid)
+                .map(|(name,sym)| (name.to_lowercase(),sym.raw())).unwrap();
+            
+            if name_lower > mid_name_lower  {
+                lo = mid + 1;
+            } else if name_lower < mid_name_lower {
+                hi = match mid {
+                    0 => break,
+                    mid => mid - 1 };
+            } else {
+                entry = Some((mid, sym));
+                break;
+
+            }
+        }
+        if let Some((ref mut idx, ref mut entry)) = entry {
+            // Keep going until we reach end of array or non case-insensitive match
+            while *idx < NAME_TO_KEYSYM.len() &&
+                    NAME_TO_KEYSYM.index(*idx).map(|(name, _)| name.to_lowercase()) == NAME_TO_KEYSYM.index(*idx + 1).map(|(name, _)| name.to_lowercase()) {
+                    *idx += 1;
+                    *entry = NAME_TO_KEYSYM.index(*idx).unwrap().1.raw();
+                }
+            return Some(Keysym::from(*entry));
+
+
+        }
+
     }
 
     let mut chars = name.chars();
@@ -83,7 +281,7 @@ where
     let second_char = chars.next();
     let _third_char = chars.next();
 
-    if first_char == Some('U') || first_char == Some('u') {
+    if first_char == Some('U') || (icase && first_char == Some('u')) {
         let val = parse_keysym_hex(&name[1..])?;
 
         if val < 0x20 || (val > 0x7e && val < 0xa0) {
@@ -95,7 +293,7 @@ where
         if val > 0x10ffff {
             return None;
         }
-        return Some(Keysym::from(val | 0x01000000));
+        return Some(Keysym::from(val | XKB_KEYSYM_UNICODE_OFFSET));
     } else if first_char == Some('0')
         && (second_char == Some('x') || icase && second_char == Some('X'))
     {
@@ -112,7 +310,7 @@ where
     // the former has no separating underscore,
     // while soem XF86* syms in the latter did.
 
-    if name.starts_with("XF86_") || (icase && name[0..5].to_lowercase() == "XF86_".to_lowercase()) {
+    if name.starts_with("XF86_") || (icase && name.len() >= 5 && name[0..5].to_lowercase() == "XF86_".to_lowercase()) {
         if name.is_empty() {
             return None;
         }
@@ -252,36 +450,31 @@ fn ucs_convert_case(code: u32) -> ConvertCase {
     // Basic Latin and Latin-1 supplement,
     // U+0000 to U+00FF
     if code <= 0x00ff {
-        if code >= 0x0041 && code <= 0x005a {
+        if (0x0041..=0x005a).contains(&code) {
             lower += 0x20;
-        } else if code >= 0x0061 && code <= 0x007a {
+        } else if (0x0061..=0x007a).contains(&code) {
             upper -= 0x20;
-        } else if (code >= 0x00c0 && code <= 0x00d6) || (code >= 0x00d8 && code <= 0x00de) {
+        } else if (0x00c0..=0x00d6).contains(&code) || (0x00d8..=0x00de).contains(&code) {
             lower += 0x20;
-        } else if (code >= 0x00e0 && code <= 0x00f6) || (code >= 0x00f8 && code <= 0x00fe) {
+        } else if (0x00e0..=0x00f6).contains(&code) || (0x00f8..=0x00fe).contains(&code) {
             upper -= 0x20;
         } else if code == 0x00ff {
             upper = 0x0178;
         } else if code == 0x00b5 {
+            //micro sign
             upper = 0x039c;
-        } else if code == 0x00df {
-            upper = 0x1e9e;
         }
-
-        return ConvertCase {
-            lower: lower.into(),
-            upper: upper.into(),
-        };
+        return ConvertCase { lower, upper };
     }
     /* Latin Extended-A, U+0100 to U+017F */
-    if code >= 0x0100 && code <= 0x017f {
-        if (code >= 0x0100 && code <= 0x012f)
-            || (code >= 0x0132 && code <= 0x0137)
-            || (code >= 0x014a && code <= 0x0177)
+    if (0x0100..=0x017f).contains(&code) {
+        if (0x0100..=0x012f).contains(&code)
+            || (0x0132..=0x0137).contains(&code)
+            || (0x014a..=0x0177).contains(&code)
         {
             upper = code & !1;
             lower = code | 1;
-        } else if (code >= 0x0139 && code <= 0x0148) || (code >= 0x0179 && code <= 0x017e) {
+        } else if (0x0139..=0x0148).contains(&code) || (0x0179..=0x017e).contains(&code) {
             if (code & 1) != 0 {
                 lower += 1;
             } else {
@@ -297,28 +490,25 @@ fn ucs_convert_case(code: u32) -> ConvertCase {
             upper = 0x0053;
         }
 
-        return ConvertCase {
-            lower: lower.into(),
-            upper: upper.into(),
-        };
+        return ConvertCase { lower, upper };
     }
 
     /* Latin Extended-B, U+0180 to U+024F */
-    if code >= 0x0180 && code <= 0x024f {
-        if code >= 0x01cd && code <= 0x01dc {
+    if (0x0180..=0x024f).contains(&code) {
+        if (0x01cd..=0x01dc).contains(&code) {
             if (code & 1) != 0 {
                 lower += 1;
             } else {
                 upper -= 1;
             }
-        } else if (code >= 0x01de && code <= 0x01ef)
-            || (code >= 0x01f4 && code <= 0x01f5)
-            || (code >= 0x01f8 && code <= 0x021f)
-            || (code >= 0x0222 && code <= 0x0233)
+        } else if (0x01de..=0x01ef).contains(&code)
+            || (0x01f4..=0x01f5).contains(&code)
+            || (0x01f8..=0x021f).contains(&code)
+            || (0x0222..=0x0233).contains(&code)
         {
             lower |= 1;
             upper &= !1;
-        } else if code >= 0x0180 && code <= 0x01cc {
+        } else if (0x0180..=0x01cc).contains(&code) {
             lower = LATIN_EXT_B_LOWER_MAPPING[code as usize - 0x0180].into();
             upper = LATIN_EXT_B_UPPER_MAPPING[code as usize - 0x0180].into();
         } else if code == 0x01dd {
@@ -336,14 +526,11 @@ fn ucs_convert_case(code: u32) -> ConvertCase {
             lower = 0x019e;
         }
 
-        return ConvertCase {
-            lower: lower.into(),
-            upper: upper.into(),
-        };
+        return ConvertCase { lower, upper };
     }
 
     /* IPA Extensions, U+0250 to U+02AF */
-    if code >= 0x0253 && code <= 0x0292 {
+    if (0x0253..=0x0292).contains(&code) {
         upper = IPA_EXT_UPPER_MAPPING[code as usize - 0x0253].into();
     }
 
@@ -353,7 +540,7 @@ fn ucs_convert_case(code: u32) -> ConvertCase {
     }
 
     /* Greek and Coptic, U+0370 to U+03FF */
-    if code >= 0x0370 && code <= 0x03ff {
+    if (0x0370..=0x03ff).contains(&code) {
         lower = GREEK_LOWER_MAPPING[code as usize - 0x0370].into();
         upper = GREEK_UPPER_MAPPING[code as usize - 0x0370].into();
         if upper == 0 {
@@ -365,24 +552,24 @@ fn ucs_convert_case(code: u32) -> ConvertCase {
     }
 
     /* Cyrillic and Cyrillic Supplementary, U+0400 to U+052F */
-    if (code >= 0x0400 && code <= 0x04ff) || (code >= 0x0500 && code <= 0x052f) {
-        if code >= 0x0400 && code <= 0x040f {
+    if (0x0400..=0x04ff).contains(&code) || (0x0500..=0x052f).contains(&code) {
+        if (0x0400..=0x040f).contains(&code) {
             lower += 0x50;
-        } else if code >= 0x0410 && code <= 0x042f {
+        } else if (0x0410..=0x042f).contains(&code) {
             lower += 0x20;
-        } else if code >= 0x0430 && code <= 0x044f {
+        } else if (0x0430..=0x044f).contains(&code) {
             upper -= 0x20;
-        } else if code >= 0x0450 && code <= 0x045f {
+        } else if (0x0450..=0x045f).contains(&code) {
             upper -= 0x50;
-        } else if (code >= 0x0460 && code <= 0x0481)
-            || (code >= 0x048a && code <= 0x04bf)
-            || (code >= 0x04d0 && code <= 0x04f5)
-            || (code >= 0x04f8 && code <= 0x04f9)
-            || (code >= 0x0500 && code <= 0x050f)
+        } else if (0x0460..=0x0481).contains(&code)
+            || (0x048a..=0x04bf).contains(&code)
+            || (0x04d0..=0x04f5).contains(&code)
+            || (0x04f8..=0x04f9).contains(&code)
+            || (0x0500..=0x050f).contains(&code)
         {
             upper &= !1;
             lower |= 1;
-        } else if code >= 0x04c1 && code <= 0x04ce {
+        } else if (0x04c1..=0x04ce).contains(&code) {
             if (code & 1) != 0 {
                 lower += 1;
             } else {
@@ -392,17 +579,17 @@ fn ucs_convert_case(code: u32) -> ConvertCase {
     }
 
     /* Armenian, U+0530 to U+058F */
-    if code >= 0x0530 && code <= 0x058f {
-        if code >= 0x0531 && code <= 0x0556 {
+    if (0x0530..=0x058f).contains(&code) {
+        if (0x0531..=0x0556).contains(&code) {
             lower += 0x30;
-        } else if code >= 0x0561 && code <= 0x0586 {
+        } else if (0x0561..=0x0586).contains(&code) {
             upper -= 0x30;
         }
     }
 
     /* Latin Extended Additional, U+1E00 to U+1EFF */
-    if code >= 0x1e00 && code <= 0x1eff {
-        if (code >= 0x1e00 && code <= 0x1e95) || (code >= 0x1ea0 && code <= 0x1ef9) {
+    if (0x1e00..=0x1eff).contains(&code) {
+        if (0x1e00..=0x1e95).contains(&code) || (0x1ea0..=0x1ef9).contains(&code) {
             upper &= !1;
             lower |= 1;
         } else if code == 0x1e9b {
@@ -413,7 +600,7 @@ fn ucs_convert_case(code: u32) -> ConvertCase {
     }
 
     /* Greek Extended, U+1F00 to U+1FFF */
-    if code >= 0x1f00 && code <= 0x1fff {
+    if (0x1f00..=0x1fff).contains(&code) {
         lower = GREEK_EXT_LOWER_MAPPING[code as usize - 0x1f00].into();
         upper = GREEK_EXT_UPPER_MAPPING[code as usize - 0x1f00].into();
         if upper == 0 {
@@ -425,7 +612,7 @@ fn ucs_convert_case(code: u32) -> ConvertCase {
     }
 
     /* Letterlike Symbols, U+2100 to U+214F */
-    if code >= 0x2100 && code <= 0x214f {
+    if (0x2100..=0x214f).contains(&code) {
         match code {
             0x2126 => lower = 0x03c9,
             0x212a => lower = 0x006b,
@@ -434,46 +621,43 @@ fn ucs_convert_case(code: u32) -> ConvertCase {
         }
     }
     /* Number Forms, U+2150 to U+218F */
-    else if code >= 0x2160 && code <= 0x216f {
+    else if (0x2160..=0x216f).contains(&code) {
         lower += 0x10;
-    } else if code >= 0x2170 && code <= 0x217f {
+    } else if (0x2170..=0x217f).contains(&code) {
         upper -= 0x10;
     }
     /* Enclosed Alphanumerics, U+2460 to U+24FF */
-    else if code >= 0x24b6 && code <= 0x24cf {
+    else if (0x24b6..=0x24cf).contains(&code) {
         lower += 0x1a;
-    } else if code >= 0x24d0 && code <= 0x24e9 {
+    } else if (0x24d0..=0x24e9).contains(&code) {
         upper -= 0x1a;
     }
     /* Halfwidth and Fullwidth Forms, U+FF00 to U+FFEF */
-    else if code >= 0xff21 && code <= 0xff3a {
+    else if (0xff21..=0xff3a).contains(&code) {
         lower += 0x20;
-    } else if code >= 0xff41 && code <= 0xff5a {
+    } else if (0xff41..=0xff5a).contains(&code) {
         upper -= 0x20;
     }
     /* Deseret, U+10400 to U+104FF */
-    else if code >= 0x10400 && code <= 0x10427 {
+    else if (0x10400..=0x10427).contains(&code) {
         lower += 0x28;
-    } else if code >= 0x10428 && code <= 0x1044f {
+    } else if (0x10428..=0x1044f).contains(&code) {
         upper -= 0x28;
     }
 
-    return ConvertCase {
-        lower: lower.into(),
-        upper: upper.into(),
-    };
+    ConvertCase { lower, upper }
 }
 
-pub fn keysym_is_keypad(sym: Keysym) -> bool {
-    let sym = sym.raw();
-    sym >= Keysym::KP_Space.raw() && sym <= Keysym::KP_Equal.raw()
+pub fn keysym_is_keypad(sym: &Keysym) -> bool {
+    sym.is_keypad_key()
 }
 
-pub fn keysym_is_modifier(sym: Keysym) -> bool {
+pub fn keysym_is_modifier(sym: &Keysym) -> bool {
     let sym = sym.raw();
 
     (sym >= Keysym::Shift_L.raw() && sym <= Keysym::Hyper_R.raw())
-        || (sym >= Keysym::ISO_Lock.raw() && sym <= Keysym::ISO_Last_Group_Lock.raw())
+        // libX11 only goes up to Level5_Lock
+        || (sym >= Keysym::ISO_Lock.raw() && sym <= Keysym::ISO_Level5_Lock.raw())
         || sym == Keysym::Mode_switch.raw()
         || sym == Keysym::Num_Lock.raw()
 }
@@ -483,18 +667,19 @@ struct ConvertCase {
     lower: u32,
 }
 
-fn x_convert_case(sym: Keysym) -> ConvertCase {
+fn x_convert_case(sym: &Keysym) -> ConvertCase {
+    let sym = *sym;
     let sym_raw: u32 = sym.into();
-    // Latin 1 keysym
-    if sym_raw < 0x100 {
+    // Latin 1 keysym (first part: fast path)
+    if sym_raw < 0xb5 {
         return ucs_convert_case(sym_raw);
     }
 
     /* Unicode keysym */
-    if (sym_raw & 0xff000000) == 0x01000000 {
+    if (sym_raw & 0xff000000) == XKB_KEYSYM_UNICODE_OFFSET {
         let mut convert = ucs_convert_case(sym_raw & 0x00ffffff);
-        convert.upper |= 0x01000000;
-        convert.lower |= 0x01000000;
+        convert.upper |= XKB_KEYSYM_UNICODE_OFFSET;
+        convert.lower |= XKB_KEYSYM_UNICODE_OFFSET;
         return convert;
     }
 
@@ -504,6 +689,18 @@ fn x_convert_case(sym: Keysym) -> ConvertCase {
     let mut upper = sym_raw;
 
     match sym_raw >> 8 {
+        0 => {
+            // Latin 1 (second part)
+            if sym == Keysym::mu {
+                upper = Keysym::Greek_MU.raw();
+            } else if sym == Keysym::ydiaeresis {
+                upper = Keysym::Ydiaeresis.raw();
+            } else {
+                let case = ucs_convert_case(sym_raw);
+                lower = case.lower;
+                upper = case.upper;
+            }
+        }
         1 => {
             /* Latin 2 */
             /* Assume the KeySym is a legal value (ignore discontinuities) */
@@ -612,7 +809,7 @@ fn x_convert_case(sym: Keysym) -> ConvertCase {
     ConvertCase { lower, upper }
 }
 
-pub fn keysym_is_lower(ks: Keysym) -> bool {
+pub fn keysym_is_lower(ks: &Keysym) -> bool {
     let convert = x_convert_case(ks);
 
     if convert.lower == convert.upper {
@@ -622,7 +819,7 @@ pub fn keysym_is_lower(ks: Keysym) -> bool {
     ks.raw() == convert.lower
 }
 
-pub fn keysym_is_upper(ks: Keysym) -> bool {
+pub fn keysym_is_upper(ks: &Keysym) -> bool {
     let convert = x_convert_case(ks);
 
     if convert.lower == convert.upper {
@@ -632,13 +829,13 @@ pub fn keysym_is_upper(ks: Keysym) -> bool {
     ks.raw() == convert.upper
 }
 
-pub fn keysym_to_lower(ks: Keysym) -> Keysym {
+pub fn keysym_to_lower(ks: &Keysym) -> Keysym {
     let convert = x_convert_case(ks);
 
     Keysym::from(convert.lower)
 }
 
-pub fn keysym_to_upper(ks: Keysym) -> Keysym {
+pub fn keysym_to_upper(ks: &Keysym) -> Keysym {
     let convert = x_convert_case(ks);
 
     Keysym::from(convert.upper)

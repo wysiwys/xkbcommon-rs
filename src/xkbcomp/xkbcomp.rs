@@ -4,7 +4,6 @@ use crate::errors::*;
 use crate::keymap::*;
 use crate::rust_xkbcommon::*;
 
-
 pub(crate) struct ComponentNames {
     pub(crate) keycodes: String,
     pub(crate) types: String,
@@ -12,37 +11,21 @@ pub(crate) struct ComponentNames {
     pub(crate) symbols: String,
 }
 
-
 impl RuleNames {
-    fn rules<'s>(&'s self) -> &'s str {
-        self.rules
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or_else(|| "")
+    fn rules(&self) -> &str {
+        self.rules.as_deref().unwrap_or("")
     }
-    fn model<'s>(&'s self) -> &'s str {
-        self.model
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or_else(|| "")
+    fn model(&self) -> &str {
+        self.model.as_deref().unwrap_or("")
     }
-    fn layout<'s>(&'s self) -> &'s str {
-        self.layout
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or_else(|| "")
+    fn layout(&self) -> &str {
+        self.layout.as_deref().unwrap_or("")
     }
-    fn variant<'s>(&'s self) -> &'s str {
-        self.variant
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or_else(|| "")
+    fn variant(&self) -> &str {
+        self.variant.as_deref().unwrap_or("")
     }
-    fn options<'s>(&'s self) -> &'s str {
-        self.options
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or_else(|| "")
+    fn options(&self) -> &str {
+        self.options.as_deref().unwrap_or("")
     }
 }
 
@@ -58,10 +41,10 @@ impl Context {
             name
         );
 
-        ReportedError::NotArray{
+        ReportedError::NotArray {
             name: name.into(),
-            _type: _type.into(), 
-            field: field.into()
+            _type: _type.into(),
+            field: field.into(),
         }
     }
 
@@ -80,10 +63,10 @@ impl Context {
             name
         );
 
-        ReportedError::ShouldBeArray{
+        ReportedError::ShouldBeArray {
             name: name.into(),
-            _type: _type.into(), 
-            field: field.into()
+            _type: _type.into(),
+            field: field.into(),
         }
     }
 
@@ -105,9 +88,9 @@ impl Context {
             name
         );
 
-        ReportedError::BadType{
+        ReportedError::BadType {
             name: name.into(),
-            _type: _type.into(), 
+            _type: _type.into(),
             field: field.into(),
             wanted: wanted.into(),
         }
@@ -125,10 +108,9 @@ impl Context {
 
         ReportedError::BadField {
             name: name.into(),
-            _type: _type.into(), 
+            _type: _type.into(),
             field: field.into(),
         }
-
     }
 }
 
@@ -154,7 +136,10 @@ impl KeymapBuilder<TextV1> {
 
         Ok(())
     }
-    pub(crate) fn keymap_new_from_names(mut self, rmlvo: RuleNames) -> Result<Keymap, KeymapCompileError> {
+    pub(crate) fn keymap_new_from_names(
+        mut self,
+        rmlvo: RuleNames,
+    ) -> Result<Keymap, KeymapCompileError> {
         log::debug!(
             "{:?}: Compiling from RMLVO: rules '{}', model '{}', layout '{}',
             variant '{}', options '{}'",
@@ -190,19 +175,19 @@ impl KeymapBuilder<TextV1> {
             kccgst.symbols
         );
 
-        let file = XkbFile::from_components(&mut self.context, kccgst); 
-        
+        let file = XkbFile::from_components(&mut self.context, kccgst);
+
         // Removed error handling because above function cannot fail
         // This is because the `calloc` failure check is not reproduced in the Rust code.
-            /*
-            err => {
-                log::error!(
-                    "{:?}: Failed to generate parsed XKB file from components",
-                    XkbMessageCode::NoId
-                );
-                return Err(err);
-            }
-            */
+        /*
+        err => {
+            log::error!(
+                "{:?}: Failed to generate parsed XKB file from components",
+                XkbMessageCode::NoId
+            );
+            return Err(err);
+        }
+        */
 
         self.compile_keymap_file(file)?;
 
@@ -212,16 +197,14 @@ impl KeymapBuilder<TextV1> {
         Ok(keymap)
     }
 
-    pub(crate) fn keymap_new_from_string(mut self, string: String) -> Result<Keymap, KeymapCompileError> {
+    pub(crate) fn keymap_new_from_string(
+        mut self,
+        string: String,
+    ) -> Result<Keymap, KeymapCompileError> {
         let xkb_file = XkbFile::parse_string(&mut self.context, string, "(input string)", None)
-            .map_err(|error| 
-                KeymapCompileError::CouldNotParseString{
-                    error}
-                )?;
+            .map_err(|error| KeymapCompileError::CouldNotParseString { error })?;
 
-        let xkb_file = xkb_file.ok_or_else(||
-            KeymapCompileError::NoMapFoundForString)?;
-
+        let xkb_file = xkb_file.ok_or_else(|| KeymapCompileError::NoMapFoundForString)?;
 
         self.compile_keymap_file(xkb_file)?;
 
@@ -231,9 +214,12 @@ impl KeymapBuilder<TextV1> {
 
         Ok(keymap)
     }
-    pub(crate) fn keymap_new_from_file(mut self, file: std::fs::File) -> Result<Keymap, KeymapCompileError> {
+    pub(crate) fn keymap_new_from_file(
+        mut self,
+        file: std::fs::File,
+    ) -> Result<Keymap, KeymapCompileError> {
         let xkb_file = XkbFile::parse_file(&mut self.context, file, "(unknown file)", None)
-            .map_err(|error| KeymapCompileError::CouldNotParseFile{ error })?
+            .map_err(|error| KeymapCompileError::CouldNotParseFile { error })?
             .ok_or_else(|| {
                 log::error!("{:?}: Failed to parse input xkb file", XkbMessageCode::NoId);
 

@@ -1,6 +1,6 @@
 use super::action::*;
 use super::ast::*;
-use super::include::*;
+use super::expr::LhsReturn;
 
 use crate::context::Context;
 use crate::errors::*;
@@ -52,16 +52,6 @@ struct LedInfo {
     led: Led,
 }
 
-impl Default for LedInfo {
-    fn default() -> Self {
-        Self {
-            defined: LedField::empty(),
-            merge: MergeMode::Default,
-            led: Default::default(),
-        }
-    }
-}
-
 struct CompatInfo {
     name: Option<String>,
     errors: Vec<CompileCompatError>,
@@ -81,17 +71,16 @@ impl SymInterpInfo {
             return "default".to_owned();
         }
 
-        // todo: 128-char limit
-        let string = format!(
+        // TODO: 128-char limit
+        format!(
             "{}+{:?}({})",
-            self.interp.sym
+            self.interp
+                .sym
                 .map(|s| ctx.keysym_text(&s))
                 .unwrap_or_else(|| "".into()),
             self.interp.match_op,
             ctx.mod_mask_text(mods, self.interp.mods.mods)
-        );
-
-        return string;
+        )
     }
 
     fn report_si_not_array(
@@ -101,7 +90,6 @@ impl SymInterpInfo {
         mods: &ModSet,
         default: bool,
     ) -> ReportedError {
-
         ctx.report_not_array(
             "symbol interpretation",
             field,
@@ -117,58 +105,43 @@ impl SymInterpInfo {
         mods: &ModSet,
         default: bool,
     ) -> ReportedError {
-        // TODO: return error?
-
         ctx.report_bad_type(
             XkbError::WrongFieldType.into(),
             "symbol interpretation",
-            &field,
+            field,
             &self.si_text(ctx, mods, default),
             wanted,
         )
     }
 }
-impl CompatInfo {
-
-    fn report_led_bad_type(
-        &self,
-        ctx: &Context,
-        ledi: &LedInfo,
-        field: &str,
-        wanted: &str,
-    ) -> ReportedError {
-        let led_name_text = match ledi.led.name {
-            None => None,
-            Some(name) => ctx.xkb_atom_text(name),
-        };
+impl LedInfo {
+    fn report_led_bad_type(&self, ctx: &Context, field: &str, wanted: &str) -> ReportedError {
+        let led_name_text = self
+            .led
+            .name
+            .map(|n| ctx.xkb_atom_text(n))
+            .expect("LED name not added");
 
         ctx.report_bad_type(
             XkbError::WrongFieldType.into(),
             "indicator map",
-            &field,
-            &led_name_text.expect("LED name not inserted"),
+            field,
+            led_name_text,
             wanted,
         )
     }
-    fn report_led_not_array(
-        &self,
-        ctx: &Context,
-        ledi: &LedInfo,
-        field: &str,
-    ) -> ReportedError {
-        let led_name_text = match ledi.led.name {
-            None => None,
-            Some(name) => ctx.xkb_atom_text(name),
-        };
+    fn report_led_not_array(&self, ctx: &Context, field: &str) -> ReportedError {
+        let led_name_text = self
+            .led
+            .name
+            .map(|n| ctx.xkb_atom_text(n))
+            .expect("LED name not added");
 
-        ctx.report_not_array(
-            "indicator map",
-            &field,
-            &led_name_text.unwrap_or_else(|| ""),
-        )
-
+        ctx.report_not_array("indicator map", field, led_name_text)
     }
+}
 
+impl CompatInfo {
     fn new(include_depth: u32, actions: ActionsInfo, mods: ModSet) -> Self {
         Self {
             include_depth,
@@ -179,7 +152,11 @@ impl CompatInfo {
                 interp: Default::default(),
                 defined: SiField::empty(),
             },
-            default_led: Default::default(),
+            default_led: LedInfo {
+                merge: MergeMode::Override,
+                defined: LedField::empty(),
+                led: Default::default(),
+            },
             unrecoverable_error: None,
             errors: vec![],
             leds: vec![],
@@ -189,16 +166,11 @@ impl CompatInfo {
     }
 
     fn find_matching_interp(&mut self, new: &SymInterpInfo) -> Option<&mut SymInterpInfo> {
-        for interp in self.interps.iter_mut() {
-            if interp.interp.sym == new.interp.sym
+        self.interps.iter_mut().find(|interp| {
+            interp.interp.sym == new.interp.sym
                 && interp.interp.mods == new.interp.mods
                 && interp.interp.match_op == new.interp.match_op
-            {
-                return Some(interp);
-            }
-        }
-
-        None
+        })
     }
 }
 
@@ -221,7 +193,7 @@ fn use_new_interp_field(
         }
     }
 
-    return false;
+    false
 }
 
 impl CompatInfo {
@@ -241,9 +213,11 @@ impl CompatInfo {
 
             if new.merge == MergeMode::Replace {
                 if report {
-                    log::warn!("{:?}: Multiple definitions for \"{}\"l Earlier interpretation ignored",
+                    log::warn!(
+                        "{:?}: Multiple definitions for \"{}\"l Earlier interpretation ignored",
                         XkbMessageCode::NoId,
-                        new.si_text(ctx, &mods, false));
+                        new.si_text(ctx, &mods, false)
+                    );
                 }
                 *old = new;
 
@@ -281,10 +255,9 @@ impl CompatInfo {
             }
 
             return Ok(());
-        } else {
-            // default case
-            self.interps.push(new);
         }
+        // default case
+        self.interps.push(new);
 
         Ok(())
     }
@@ -293,25 +266,20 @@ impl CompatInfo {
         &self,
         ctx: &Context,
         expr: Option<ExprDef>,
-    ) -> Result<(MatchOperation, Option<ModMask>), CompileCompatError> {
-        // TODO: rewrite this function,
-        // This function is only used in `handle_interp_def`,
-        // and the data it modifies is not used if the function fails.
-        // Maybe return an empty ModMask instead of a None
-
+    ) -> Result<(MatchOperation, ModMask), CompileCompatError> {
         let mut expr = match expr {
             Some(expr) => expr,
             None => {
-                return Ok((MatchOperation::AnyOrNone, Some(MOD_REAL_MASK_ALL)));
+                return Ok((MatchOperation::AnyOrNone, MOD_REAL_MASK_ALL));
             }
         };
 
         let mut pred = MatchOperation::Exactly;
         if let ExprDef::Action(mut action) = expr {
-            let pred_txt = ctx.xkb_atom_text(action.name).unwrap_or_else(|| "");
+            let pred_txt = ctx.xkb_atom_text(action.name);
             let key = lookup_key(&SYM_INTERPRET_MATCH_MASK_NAMES, pred_txt);
 
-            if key.is_none() || action.args.len() == 0 || action.args.len() > 1 {
+            if key.is_none() || action.args.is_empty() || action.args.len() > 1 {
                 //TODO: is this correct?
 
                 let err = XkbMessageCode::NoId;
@@ -321,7 +289,9 @@ impl CompatInfo {
                     pred_txt
                 );
 
-                return Err(CompileCompatError::IllegalModifierPredicate(pred_txt.into()));
+                return Err(CompileCompatError::IllegalModifierPredicate(
+                    pred_txt.into(),
+                ));
             } else if let Some(txt) = key {
                 pred = txt.clone();
             }
@@ -329,20 +299,19 @@ impl CompatInfo {
             // Take the first arg from the args,
             // as this is what appears to actually happen in
             // the lookup.
-            // TODO: will need to determine if this is intended behavior.
 
-            expr = *action.args.remove(0);
+            expr = action.args.remove(0);
         } else if let ExprDef::Ident(ref ident) = expr {
-            if let Some(pred_txt) = ctx.xkb_atom_text(ident.ident) {
-                if pred_txt.to_lowercase().as_str() == "any" {
-                    return Ok((MatchOperation::Any, Some(MOD_REAL_MASK_ALL)));
-                }
+            let pred_txt = ctx.xkb_atom_text(ident.ident);
+            if pred_txt.to_lowercase().as_str() == "any" {
+                return Ok((MatchOperation::Any, MOD_REAL_MASK_ALL));
             }
         }
 
-        let mod_mask = expr.resolve_mod_mask(ctx, ModType::REAL, &self.mods);
-
-        return Ok((pred, mod_mask));
+        match expr.resolve_mod_mask(ctx, ModType::REAL, &self.mods) {
+            Some(mod_mask) => Ok((pred, mod_mask)),
+            None => Err(todo!()),
+        }
     }
 }
 fn use_new_led_field(
@@ -364,7 +333,7 @@ fn use_new_led_field(
         }
     }
 
-    return false;
+    false
 }
 
 impl CompatInfo {
@@ -395,7 +364,14 @@ impl CompatInfo {
 
             if new.merge == MergeMode::Replace {
                 if report {
-                    todo!()
+                    log::warn!(
+                        "{:?}: Map for indicator {:?} redefined; Earlier definition ignored",
+                        XkbMessageCode::NoId,
+                        old.led
+                            .name
+                            .map(|n| ctx.xkb_atom_text(n))
+                            .unwrap_or_else(|| "")
+                    );
                 }
                 *old = new;
                 return Ok(());
@@ -420,13 +396,13 @@ impl CompatInfo {
 
             if report && !collision.is_empty() {
                 log::warn!(
-                    "{:?}: Map for indicator {:?} redefined;
+                    "{:?}: Map for indicator {} redefined;
                     Using {} definition for duplicate fields.",
                     XkbMessageCode::NoId,
-                    match old.led.name {
-                        None => None,
-                        Some(name) => ctx.xkb_atom_text(name),
-                    },
+                    old.led
+                        .name
+                        .map(|n| ctx.xkb_atom_text(n))
+                        .unwrap_or_else(|| ""),
                     match new.merge {
                         MergeMode::Augment => "first",
                         _ => "last",
@@ -437,16 +413,16 @@ impl CompatInfo {
             return Ok(());
         }
 
-        // TODO: should this be > ?
         if self.leds.len() >= XKB_MAX_LEDS {
-            log::error!("{:?}: Too many LEDs defined (maximum {})",
-            XkbMessageCode::NoId,
-            XKB_MAX_LEDS
+            log::error!(
+                "{:?}: Too many LEDs defined (maximum {})",
+                XkbMessageCode::NoId,
+                XKB_MAX_LEDS
             );
 
-            return Err(CompileCompatError::MoreLedsThanAllowed{
+            return Err(CompileCompatError::MoreLedsThanAllowed {
                 provided: self.leds.len(),
-                max: XKB_MAX_LEDS
+                max: XKB_MAX_LEDS,
             });
         }
 
@@ -456,7 +432,7 @@ impl CompatInfo {
     }
 
     fn merge_included_compat_maps(&mut self, ctx: &Context, mut from: Self, merge: MergeMode) {
-        if from.errors.len() > 0 {
+        if !from.errors.is_empty() {
             self.errors.append(&mut from.errors);
             return;
         }
@@ -466,10 +442,9 @@ impl CompatInfo {
             return;
         }
 
+        self.mods = from.mods;
         // added here in case this was updated by `from`
         self.actions = from.actions;
-
-        self.mods = from.mods;
 
         if self.name.is_none() {
             self.name = from.name;
@@ -490,7 +465,7 @@ impl CompatInfo {
             }
         }
 
-        if self.leds.len() == 0 {
+        if self.leds.is_empty() {
             self.leds = from.leds;
         } else {
             for mut ledi in from.leds {
@@ -514,24 +489,23 @@ impl CompatInfo {
 
         let merge = include.merge;
 
-        let include: Vec<IncludeStmtPart> = include.maps;
-
         if ctx.exceeds_include_max_depth(self.include_depth) {
             let err: CompileCompatError = CompileCompatError::ExceedsIncludeMaxDepth;
             self.unrecoverable_error = Some(err.clone());
             return Err(err);
         }
 
-        // TODO: use a mutable pointer to self.actions instead of cloning
+        // Cloned here but copied modified actions back in `merge_included_compat_maps`
         let mut included = Self::new(0, self.actions.clone(), self.mods.clone());
-        for stmt in include {
-            let file = process_include_file(ctx, &stmt, XkbFileType::Compat);
+        included.name = Some(include.stmt);
 
-            let file = file
-            .map_err(|e| {
+        for stmt in include.maps {
+            let file = ctx
+                .process_include_file(&stmt, XkbFileType::Compat)
+                .map_err(|e| {
                     self.unrecoverable_error = Some(e.clone().into());
                     e
-            })?;
+                })?;
 
             let mut next_incl = Self::new(
                 self.include_depth + 1,
@@ -554,72 +528,54 @@ impl CompatInfo {
         }
         match self.errors.len() {
             0 => Ok(()),
-            _ => Err(CompileCompatError::Multiple(Box::new(self.errors.clone()))),
+            _ => Err(CompileCompatError::Multiple(self.errors.clone())),
         }
     }
+}
 
+impl SymInterpInfo {
     fn set_interp_field(
         &mut self,
         ctx: &Context,
-        non_default: Option<&mut SymInterpInfo>,
         field: &str,
+        default: bool,
+        mods: &ModSet,
+        actions: &mut ActionsInfo,
         array_ndx: Option<ExprDef>,
         value: ExprDef,
     ) -> Result<(), CompileCompatError> {
-        // Determine whether to set interp field
-        // on own default, or to use a passed_in value
-        
-        let (default, si) = match non_default {
-            Some(si) => (false, si),
-            None => (true, &mut self.default_interp),
-        };
-
         let field_lowercase = field.to_lowercase();
 
         if &field_lowercase == "action" {
             if array_ndx.is_some() {
-                return Err(si
-                    .report_si_not_array(ctx, field, &self.mods, default)
-                    .into());
+                return Err(self.report_si_not_array(ctx, field, mods, default).into());
             }
 
-            si.interp.action = self.actions.handle_action_def(ctx, &self.mods, value)?;
+            self.interp.action = actions.handle_action_def(ctx, mods, value)?;
 
-            si.defined |= SiField::ACTION;
+            self.defined |= SiField::ACTION;
         } else if ["virtualmodifier", "virtualmod"].contains(&field_lowercase.as_str()) {
             if array_ndx.is_some() {
-                return Err(si
-                    .report_si_not_array(ctx, field, &self.mods, default)
-                    .into());
+                return Err(self.report_si_not_array(ctx, field, mods, default).into());
             }
 
-            let ndx = value.resolve_mod(ctx, ModType::VIRT, &self.mods);
+            let ndx = value
+                .resolve_mod(ctx, ModType::VIRT, mods)
+                .ok_or_else(|| self.report_si_not_array(ctx, field, mods, default))?;
 
-            let ndx = match ndx {
-                None => {
-                    return Err(si
-                        .report_si_not_array(ctx, field, &self.mods, default)
-                        .into())
-                }
-                Some(ndx) => ndx,
-            };
-
-            si.interp.virtual_mod = Some(ndx.try_into().unwrap());
-            si.defined |= SiField::VIRTUAL_MOD;
+            self.interp.virtual_mod = Some(ndx);
+            self.defined |= SiField::VIRTUAL_MOD;
         } else if &field_lowercase == "repeat" {
             if array_ndx.is_some() {
-                return Err(si
-                    .report_si_not_array(ctx, field, &self.mods, default)
-                    .into());
+                return Err(self.report_si_not_array(ctx, field, mods, default).into());
             }
 
-            let set = value.resolve_boolean(ctx)
-                .ok_or_else( || 
-                        si.report_si_bad_type(ctx, field, "boolean", &self.mods, default)
-                )?;
+            let set = value
+                .resolve_boolean(ctx)
+                .ok_or_else(|| self.report_si_bad_type(ctx, field, "boolean", mods, default))?;
 
-            si.interp.repeat = set;
-            si.defined |= SiField::AUTO_REPEAT;
+            self.interp.repeat = set;
+            self.defined |= SiField::AUTO_REPEAT;
         } else if &field_lowercase == "locking" {
             log::debug!(
                 "{:?}: The \"locking\" field in symbol interpretation is unsupported;
@@ -628,35 +584,36 @@ impl CompatInfo {
             );
         } else if ["usemodmap", "usemodmapmods"].contains(&field_lowercase.as_str()) {
             if array_ndx.is_some() {
-                return Err(si
-                    .report_si_not_array(ctx, field, &self.mods, default)
-                    .into());
+                return Err(self.report_si_not_array(ctx, field, mods, default).into());
             }
 
             let val = value
                 .resolve_enum(ctx, |s| lookup_key(&USE_MOD_MAP_VALUE_NAMES, s))
-                .ok_or_else( || 
-                    si.report_si_bad_type(ctx, field, "level specification", &self.mods, default)
-                )?;
-    
+                .ok_or_else(|| {
+                    self.report_si_bad_type(ctx, field, "level specification", mods, default)
+                })?;
 
-            si.interp.level_one_only = *val;
-            si.defined |= SiField::LEVEL_ONE_ONLY;
+            self.interp.level_one_only = *val;
+            self.defined |= SiField::LEVEL_ONE_ONLY;
         } else {
-            return Err(ctx.report_bad_field(
-                "symbol interpretation",
-                field,
-                &si.si_text(ctx, &self.mods, default),
-            ).into());
+            return Err(ctx
+                .report_bad_field(
+                    "symbol interpretation",
+                    field,
+                    &self.si_text(ctx, mods, default),
+                )
+                .into());
         }
 
         Ok(())
     }
+}
 
+impl LedInfo {
     fn set_led_map_field(
         &mut self,
         ctx: &Context,
-        ledi: &mut LedInfo,
+        mods: &ModSet,
         field: &str,
         array_ndx: Option<ExprDef>,
         value: ExprDef,
@@ -665,104 +622,81 @@ impl CompatInfo {
 
         if ["modifiers", "mods"].contains(&field_lowercase.as_str()) {
             if array_ndx.is_some() {
-                return Err(
-                    self.report_led_not_array(ctx, &ledi, field).into());
+                return Err(self.report_led_not_array(ctx, field).into());
             }
 
-            ledi.led.mods.mods = value
-                .resolve_mod_mask(
-                    ctx, ModType::BOTH, &self.mods)
-                .ok_or_else(|| 
-                    self.report_led_bad_type(ctx, &ledi, field, "modifier mask")
-                )?;
+            self.led.mods.mods = value
+                .resolve_mod_mask(ctx, ModType::BOTH, mods)
+                .ok_or_else(|| self.report_led_bad_type(ctx, field, "modifier mask"))?;
 
-            ledi.defined |= LedField::MODS;
+            self.defined |= LedField::MODS;
 
-            return Ok(());
+            Ok(())
         } else if field_lowercase.as_str() == "groups" {
             if array_ndx.is_some() {
-                return Err(self
-                    .report_led_not_array(ctx, &ledi, field).into());
+                return Err(self.report_led_not_array(ctx, field).into());
             }
 
             let mask = value.resolve_mask(ctx, |ident, _, ctx| {
-                let s = ctx.xkb_atom_text(ident)?;
+                let s = ctx.atom_text(ident)?;
                 lookup_key(&GROUP_MASK_NAMES, s).copied()
             });
-            ledi.led.groups = match mask {
-                Some(mask) => mask,
-                None => {
-                    return Err(self
-                        .report_led_bad_type(ctx, ledi, field, "group mask")
-                        .into())
-                }
-            };
+            self.led.groups =
+                mask.ok_or_else(|| self.report_led_bad_type(ctx, field, "group mask"))?;
 
-            ledi.defined |= LedField::GROUPS;
+            self.defined |= LedField::GROUPS;
 
-            return Ok(());
+            Ok(())
         } else if ["controls", "ctrls"].contains(&field_lowercase.as_str()) {
             if array_ndx.is_some() {
-                return Err(self
-                    .report_led_not_array(ctx, &ledi, field)
-                    .into());
+                return Err(self.report_led_not_array(ctx, field).into());
             }
 
             let mask = value.resolve_mask(ctx, |ident, _, ctx| {
-                let s = ctx.xkb_atom_text(ident)?;
+                let s = ctx.atom_text(ident)?;
                 lookup_key(&CTRL_MASK_NAMES, s).copied()
             });
-            ledi.led.ctrls = mask 
-                .ok_or_else(||
-                    self.report_led_bad_type(ctx, ledi, field, "controls mask")
-                )?;
+            self.led.ctrls =
+                mask.ok_or_else(|| self.report_led_bad_type(ctx, field, "controls mask"))?;
 
-            ledi.defined |= LedField::CTRLS;
+            self.defined |= LedField::CTRLS;
 
-            return Ok(());
+            Ok(())
         } else if field_lowercase.as_str() == "allowexplicit" {
             log::debug!(
                 "{:?}: The \"allowExplicit\" field in indicator statements is unsupported; Ignored",
                 XkbMessageCode::NoId
             );
 
-            return Ok(());
+            Ok(())
         } else if ["whichmodstate", "whichmodifierstate"].contains(&field_lowercase.as_str()) {
             if array_ndx.is_some() {
-                return Err(self
-                    .report_led_not_array(ctx, &ledi, field)
-                    .into());
+                return Err(self.report_led_not_array(ctx, field).into());
             }
 
             let mask = value.resolve_mask(ctx, |ident, _, ctx| {
-                let s = ctx.xkb_atom_text(ident)?;
+                let s = ctx.atom_text(ident)?;
                 lookup_key(&MOD_COMPONENT_MASK_NAMES, s).copied()
             });
-            ledi.led.which_mods = mask
-            .ok_or_else(|| 
-                    self
-                        .report_led_bad_type(ctx, ledi, field, "mask of modifier state components")
-            )?;
+            self.led.which_mods = mask.ok_or_else(|| {
+                self.report_led_bad_type(ctx, field, "mask of modifier state components")
+            })?;
 
-            return Ok(());
+            Ok(())
         } else if field_lowercase.as_str() == "whichgroupstate" {
             if array_ndx.is_some() {
-                return Err(self
-                    .report_led_not_array(ctx, &ledi, field)
-                    .into());
+                return Err(self.report_led_not_array(ctx, field).into());
             }
 
             let mask = value.resolve_mask(ctx, |ident, _, ctx| {
-                let s = ctx.xkb_atom_text(ident)?;
-                GROUP_COMPONENT_MASK_NAMES.get(&s).copied()
+                let s = ctx.atom_text(ident)?;
+                lookup_key(&GROUP_COMPONENT_MASK_NAMES, s).copied()
             });
-            ledi.led.which_groups = mask
-                .ok_or_else(|| 
-                    self
-                        .report_led_bad_type(ctx, ledi, field, "mask of group state components")
-                )?;
+            self.led.which_groups = mask.ok_or_else(|| {
+                self.report_led_bad_type(ctx, field, "mask of group state components")
+            })?;
 
-            return Ok(());
+            Ok(())
         } else if [
             "driveskbd",
             "driveskeyboard",
@@ -778,28 +712,31 @@ impl CompatInfo {
                 field
             );
 
-            return Ok(());
+            Ok(())
         } else if field_lowercase.as_str() == "index" {
             // Users should see this, as it might cause unexpected behavior
             log::error!(
                 "{:?}: The \"index\" field in indicator statements is unsupported; Ignored",
                 XkbMessageCode::NoId
             );
-            return Ok(());
+            Ok(())
         } else {
             log::error!(
                 "{:?}: Unknown field {} in map for {:?} indicator; definition ignored",
                 XkbMessageCode::NoId,
                 field,
-                ctx.xkb_atom_text(ledi.led.name.unwrap_or_else(|| 0))
+                ctx.xkb_atom_text(self.led.name.unwrap_or(0))
             );
 
-            return Err(CompileCompatError::UnknownFieldInMap(field.into()));
+            Err(CompileCompatError::UnknownFieldInMap(field.into()))
         }
     }
+}
 
+impl CompatInfo {
     fn handle_global_var(&mut self, ctx: &Context, stmt: VarDef) -> Result<(), CompileCompatError> {
-        let lhs = stmt.name
+        let lhs = stmt
+            .name
             .ok_or_else(|| CompileCompatError::GlobalVarMissingLhs)?
             .resolve_lhs(ctx)
             .ok_or_else(|| CompileCompatError::GlobalVarCouldNotResolveLhs)?;
@@ -808,16 +745,25 @@ impl CompatInfo {
             let elem = elem.to_lowercase();
 
             if elem.as_str() == "interpret" {
-                return self.set_interp_field(ctx, None, &lhs.field, lhs.index, stmt.value);
+                return self.default_interp.set_interp_field(
+                    ctx,
+                    &lhs.field,
+                    true,
+                    &self.mods,
+                    &mut self.actions,
+                    lhs.index,
+                    stmt.value,
+                );
             } else if elem.as_str() == "indicator" {
-                return self.set_led_map_field(ctx, todo!(), &lhs.field, lhs.index, stmt.value);
+                return self
+                    .default_led
+                    .set_led_map_field(ctx, &self.mods, &lhs.field, lhs.index, stmt.value);
             }
         }
 
-        self.actions
-            .set_action_field(ctx, &self.mods, lhs.elem, &lhs.field, lhs.index, stmt.value)?;
-
-        Ok(())
+        Ok(self
+            .actions
+            .set_action_field(ctx, &self.mods, lhs.elem, &lhs.field, lhs.index, stmt.value)?)
     }
 
     fn handle_interp_body(
@@ -826,39 +772,38 @@ impl CompatInfo {
         defs: Vec<VarDef>,
         si: &mut SymInterpInfo,
     ) -> Result<(), CompileCompatError> {
-        // TODO: in the original, there is a value `ok`
-        // which could be changed from 'true' to 'false' to 'true'
-        // in the course of the loop.
-        // This is kept the same
-
         let mut ok = Ok(());
         for def in defs {
-            if def.name.is_none() {
-                // equivalent to resolve_lhs().is_none()
-                ok = Err(CompileCompatError::CouldNotResolveLhs);
-            } else if let Some(name) = def.name {
-                if name.op_type() == ExprOpType::FieldRef {
-                    let err = XkbMessageCode::NoId;
-                    log::error!(
-                        "{:?}: Cannot set a global default
-                        value from within an interpret statement;
-                        Move statements to the global file scope",
-                        err
-                    );
+            let resolved = def.name.and_then(|name| name.resolve_lhs(ctx));
 
-                    ok = Err(CompileCompatError::GlobalDefaultInsideInterp);
+            let lhs: LhsReturn = match resolved {
+                Some(result) => result,
+                None => {
+                    ok = Err(CompileCompatError::CouldNotResolveLhs);
                     continue;
                 }
-                let lhs = match name.resolve_lhs(ctx) {
-                    Some(lhs) => lhs,
-                    None => {
-                        ok = Err(CompileCompatError::CouldNotResolveLhs);
-                        continue;
-                    }
-                };
+            };
 
-                ok = self.set_interp_field(ctx, Some(si), &lhs.field, lhs.index, def.value);
+            if let Some(elem) = lhs.elem {
+                let err = XkbMessageCode::NoId;
+                log::error!(
+                    "{:?}: Cannot set a global default value for \"{}\" element from within an interpret statement; Move assignment to \"{}.{}\" to the global file scope",
+                    err, elem, elem, lhs.field
+                );
+
+                ok = Err(CompileCompatError::GlobalDefaultInsideInterp);
+                continue;
             }
+
+            ok = si.set_interp_field(
+                ctx,
+                &lhs.field,
+                false,
+                &self.mods,
+                &mut self.actions,
+                lhs.index,
+                def.value,
+            );
         }
 
         ok
@@ -870,42 +815,40 @@ impl CompatInfo {
         def: InterpDef,
         merge: MergeMode,
     ) -> Result<(), CompileCompatError> {
-        let (pred, mods) = match self.resolve_state_and_predicate(ctx, def._match) {
-            Err(e) => {
+        let (pred, mods) = self
+            .resolve_state_and_predicate(ctx, def._match)
+            .map_err(|e| {
                 let err = XkbMessageCode::NoId;
 
                 log::error!(
                     "{:?}: Couldn't determine matching modifiers; Symbol interpretation ignored.",
                     err
                 );
-                return Err(e);
-            }
-            Ok(q) => q,
-        };
-
-        let mods = match mods {
-            Some(mods) => mods,
-            None => 0,
-        };
+                e
+            })?;
 
         let mut si = self.default_interp.clone();
-        si.merge = match def.merge {
-            MergeMode::Default => merge,
-            _ => def.merge,
-        };
+
+        if def.merge == MergeMode::Default {
+            si.merge = merge;
+        } else {
+            si.merge = def.merge;
+        }
+
         si.interp.sym = def.sym;
         si.interp.match_op = pred;
-        si.interp.mods.mods = mods; // TODO: is this correct?
+        si.interp.mods.mods = mods;
 
-        if let Err(e) = self.handle_interp_body(ctx, def.def, &mut si) {
-            self.errors.push(e.clone());
-            return Err(e);
-        }
+        self.handle_interp_body(ctx, def.def, &mut si)
+            .map_err(|e| {
+                self.errors.push(e.clone());
+                e
+            })?;
 
-        if let Err(e) = self.add_interp(ctx, si, true) {
+        self.add_interp(ctx, si, true).map_err(|e| {
             self.errors.push(e.clone());
-            return Err(e.into());
-        }
+            e
+        })?;
 
         Ok(())
     }
@@ -916,11 +859,6 @@ impl CompatInfo {
         def: LedMapDef,
         mut merge: MergeMode,
     ) -> Result<(), CompileCompatError> {
-        // TODO: in the original, there is a value `ok`
-        // which could be changed from 'true' to 'false' to 'true'
-        // in the course of the loop.
-        // In the Rust version, this has been kept the same
-
         if def.merge != MergeMode::Default {
             merge = def.merge;
         }
@@ -957,13 +895,12 @@ impl CompatInfo {
                 );
                 ok = Err(CompileCompatError::GlobalDefaultsWrongScope(elem));
             } else {
-                ok = self
-                    .set_led_map_field(ctx, &mut ledi, &lhs.field, lhs.index, var.value)
+                ok = ledi.set_led_map_field(ctx, &self.mods, &lhs.field, lhs.index, var.value)
             }
         }
 
         if ok.is_ok() {
-            return self.add_led_map(ctx, ledi, true).map_err(|e| e.into());
+            return self.add_led_map(ctx, ledi, true);
         }
 
         ok
@@ -990,10 +927,11 @@ impl CompatInfo {
                 }
                 Decl::LedMap(map) => self.handle_led_map_def(ctx, map, merge),
                 Decl::Var(var) => self.handle_global_var(ctx, var),
-                Decl::VMod(vmod) => self.mods.handle_vmod_def(ctx, vmod, merge)
+                Decl::VMod(vmod) => self
+                    .mods
+                    .handle_vmod_def(ctx, vmod, merge)
                     .map_err(|e| e.into()),
                 _ => {
-
                     let _type = stmt.stmt_type();
                     log::error!(
                         "{:?}: Compat files may not include other types;
@@ -1003,7 +941,6 @@ impl CompatInfo {
                     );
 
                     Err(CompileCompatError::WrongDeclType(_type.into()))
-                    
                 }
             };
 
@@ -1011,7 +948,7 @@ impl CompatInfo {
                 self.errors.push(e);
             }
 
-            if self.unrecoverable_error.is_some() || self.errors.len() > 10  {
+            if self.unrecoverable_error.is_some() || self.errors.len() > 10 {
                 log::error!(
                     "{:?}: Abandoning compatibility map {:?}",
                     XkbMessageCode::NoId,
@@ -1040,24 +977,22 @@ impl CompatInfo {
 }
 
 fn copy_led_map_defs_to_keymap(leds: Vec<LedInfo>, builder: &mut KeymapBuilder<TextV1>) {
-    // TODO: rewrite this function
-
     for ledi in leds {
         // Find the LED with the given name, if it was already declared
         // in keycodes.
-        let mut available_position = builder.leds.iter().position(|led| {
-            if let Some(led) = led {
-                led.name == ledi.led.name
-            } else {
-                false
-            }
-        });
+        let mut available_position = builder
+            .leds
+            .iter()
+            .flatten()
+            .position(|led| led.name == ledi.led.name);
 
         // Not previously declared; create it with next free index
         if available_position.is_none() {
             log::debug!("{:?}: Indicator name \"{}\" was not declared in the keycodes section; Adding new indicator", XkbMessageCode::NoId, 
-            builder.context
-                .xkb_atom_text(ledi.led.name.unwrap_or_else(|| 0)).unwrap_or_else(|| ""));
+            ledi.led.name.map(|n|
+                builder.context.xkb_atom_text(n))
+                .unwrap_or_else(|| "")
+            );
 
             // get next free index
             let next_free_pos = builder.leds.iter_mut().position(|l| l.is_none());
@@ -1069,10 +1004,7 @@ fn copy_led_map_defs_to_keymap(leds: Vec<LedInfo>, builder: &mut KeymapBuilder<T
                         "{:?}: Too many indicators (maximum is {}); Indicator name \"{}\" ignored",
                         XkbMessageCode::NoId,
                         XKB_MAX_LEDS,
-                        builder
-                            .context
-                            .xkb_atom_text(ledi.led.name.unwrap_or_else(|| 0))
-                            .unwrap_or_else(|| "")
+                        builder.context.xkb_atom_text(ledi.led.name.unwrap_or(0))
                     );
 
                     continue;
@@ -1147,13 +1079,11 @@ pub(super) fn compile_compat(
     info.handle_compat_map_file(&mut builder.context, file, merge);
     if let Some(e) = info.unrecoverable_error {
         return Err(e);
-
-    }
-    else if info.errors.len() > 0 {
-        return Err(CompileCompatError::Multiple(Box::new(info.errors)));
+    } else if !info.errors.is_empty() {
+        return Err(CompileCompatError::Multiple(info.errors));
     }
 
     info.copy_compat_to_keymap(builder);
 
-    return Ok(());
+    Ok(())
 }

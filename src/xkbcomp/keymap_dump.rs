@@ -27,11 +27,7 @@ impl KeymapWriter {
                 write!(&mut self.buf, ",")?;
             }
 
-            write!(
-                &mut self.buf,
-                "{}",
-                ctx.xkb_atom_text(_mod.name).unwrap_or_else(|| "".into())
-            )?;
+            write!(&mut self.buf, "{}", ctx.xkb_atom_text(_mod.name))?;
 
             num_vmods += 1;
         }
@@ -46,9 +42,9 @@ impl KeymapWriter {
     fn write_keycodes(&mut self, keymap: &Keymap) -> Result<(), Box<dyn std::error::Error>> {
         let ctx = &keymap.context;
         if let Some(name) = keymap.keycodes_section_name.as_ref() {
-            write!(&mut self.buf, "xkb_keycodes \"{}\" {{\n", name)?;
+            writeln!(&mut self.buf, "xkb_keycodes \"{}\" {{", name)?;
         } else {
-            write!(&mut self.buf, "xkb_keycodes {{\n")?;
+            writeln!(&mut self.buf, "xkb_keycodes {{")?;
         }
 
         // xkbcomp and X11 really want to see keymaps with a minimum
@@ -57,21 +53,21 @@ impl KeymapWriter {
         // really need strictly bounded keymaps, we should probably
         // control this with a flag.
 
-        write!(
+        writeln!(
             &mut self.buf,
-            "\tminimum = {};\n",
+            "\tminimum = {};",
             u32::min(keymap.min_key_code, 8)
         )?;
-        write!(
+        writeln!(
             &mut self.buf,
-            "\tmaximum = {};\n",
+            "\tmaximum = {};",
             u32::max(keymap.min_key_code, 255)
         )?;
 
         for (kc, key) in keymap.keys.iter() {
-            write!(
+            writeln!(
                 &mut self.buf,
-                "\t{:20} = {};\n",
+                "\t{:20} = {};",
                 ctx.key_name_text(key.name),
                 kc
             )?;
@@ -80,26 +76,26 @@ impl KeymapWriter {
         for (idx, led) in keymap.leds.iter().enumerate() {
             if let Some(led) = led.as_ref() {
                 if let Some(name) = led.name.as_ref() {
-                    write!(
+                    writeln!(
                         &mut self.buf,
-                        "\tindicator {} = \"{}\";\n",
+                        "\tindicator {} = \"{}\";",
                         idx + 1,
-                        ctx.xkb_atom_text(*name).unwrap_or_else(|| "".into())
+                        ctx.xkb_atom_text(*name)
                     )?;
                 }
             }
         }
 
         for alias in keymap.key_aliases.iter() {
-            write!(
+            writeln!(
                 &mut self.buf,
-                "\talias {:14} = {};\n",
+                "\talias {:14} = {};",
                 ctx.key_name_text(alias.alias),
                 ctx.key_name_text(alias.real)
             )?;
         }
 
-        write!(&mut self.buf, "}};\n\n")?;
+        writeln!(&mut self.buf, "}};\n")?;
 
         Ok(())
     }
@@ -107,23 +103,23 @@ impl KeymapWriter {
         let ctx = &keymap.context;
 
         if let Some(name) = keymap.types_section_name.as_ref() {
-            write!(&mut self.buf, "xkb_types \"{}\" {{\n", name)?;
+            writeln!(&mut self.buf, "xkb_types \"{}\" {{", name)?;
         } else {
-            write!(&mut self.buf, "xkb_types {{\n")?;
+            writeln!(&mut self.buf, "xkb_types {{")?;
         }
 
-        self.write_vmods(&ctx, keymap)?;
+        self.write_vmods(ctx, keymap)?;
 
         for _type in keymap.types.iter() {
-            write!(
+            writeln!(
                 &mut self.buf,
-                "\ttype \"{}\" {{\n",
-                ctx.xkb_atom_text(_type.name).unwrap_or_else(|| "")
+                "\ttype \"{}\" {{",
+                ctx.xkb_atom_text(_type.name)
             )?;
 
-            write!(
+            writeln!(
                 &mut self.buf,
-                "\t\tmodifiers= {};\n",
+                "\t\tmodifiers= {};",
                 ctx.mod_mask_text(&keymap.mods, _type.mods.mods)
             )?;
 
@@ -134,30 +130,28 @@ impl KeymapWriter {
 
                 let s = ctx.mod_mask_text(&keymap.mods, entry.mods.mods);
 
-                write!(&mut self.buf, "\t\tmap[{}]= {};\n", s, entry.level + 1)?;
+                writeln!(&mut self.buf, "\t\tmap[{}]= {};", s, entry.level + 1)?;
 
                 if entry.preserve.mods != 0 {
-                    write!(
+                    writeln!(
                         &mut self.buf,
-                        "\t\tpreserve[{}]= {};\n",
+                        "\t\tpreserve[{}]= {};",
                         s,
                         ctx.mod_mask_text(&keymap.mods, entry.preserve.mods)
                     )?;
                 }
             }
 
-            for (n, level_name) in _type.level_names.iter().enumerate() {
-                // TODO: reconsider level_names vec
-
-                write!(
+            for (n, level_name) in _type.level_names.iter() {
+                writeln!(
                     &mut self.buf,
-                    "\t\tlevel_name[{}]= \"{}\";\n",
+                    "\t\tlevel_name[{}]= \"{}\";",
                     n + 1,
-                    ctx.xkb_atom_text(*level_name).unwrap_or_else(|| "")
+                    ctx.xkb_atom_text(*level_name)
                 )?;
             }
 
-            write!(&mut self.buf, "\t}};\n")?;
+            writeln!(&mut self.buf, "\t}};")?;
         }
         write!(&mut self.buf, "}};\n\n")?;
 
@@ -169,50 +163,46 @@ impl KeymapWriter {
         led: &Led,
         keymap_mods: &ModSet,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        write!(
+        writeln!(
             &mut self.buf,
-            "\tindicator \"{}\" {{\n",
-            match led.name.as_ref() {
-                Some(name) => ctx.xkb_atom_text(*name),
-                None => None,
-            }
-            .unwrap_or_else(|| "".into())
+            "\tindicator \"{}\" {{",
+            led.name.map(|n| ctx.xkb_atom_text(n)).unwrap_or("")
         )?;
 
         if !led.which_groups.is_empty() {
             if led.which_groups != StateComponent::LAYOUT_EFFECTIVE {
-                write!(
+                writeln!(
                     &mut self.buf,
-                    "\t\twhichGroupState= {};\n",
+                    "\t\twhichGroupState= {};",
                     ctx.led_state_mask_text(led.which_groups)
                 )?;
             }
-            write!(&mut self.buf, "\t\tgroups= {:#04x};\n", led.groups)?;
+            writeln!(&mut self.buf, "\t\tgroups= {:#04x};", led.groups)?;
         }
 
         if !led.which_mods.is_empty() {
             if led.which_mods != StateComponent::MODS_EFFECTIVE {
-                write!(
+                writeln!(
                     &mut self.buf,
-                    "\t\twhichModState= {};\n",
+                    "\t\twhichModState= {};",
                     ctx.led_state_mask_text(led.which_mods)
                 )?;
             }
-            write!(
+            writeln!(
                 &mut self.buf,
-                "\t\tmodifiers= {};\n",
+                "\t\tmodifiers= {};",
                 ctx.mod_mask_text(keymap_mods, led.mods.mods)
             )?;
         }
 
         if !led.ctrls.is_empty() {
-            write!(
+            writeln!(
                 &mut self.buf,
-                "\t\tcontrols= {};\n",
+                "\t\tcontrols= {};",
                 ctx.control_mask_text(led.ctrls)
             )?;
         }
-        write!(&mut self.buf, "\t}};\n")?;
+        writeln!(&mut self.buf, "\t}};")?;
 
         Ok(())
     }
@@ -244,15 +234,10 @@ impl KeymapWriter {
         &mut self,
         ctx: &Context,
         builder: &Keymap,
-        action: Option<&Action>,
+        action: &Action,
         prefix: &str,
         suffix: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let action = match action {
-            Some(action) => action,
-            Option::None => &Action::None,
-        };
-
         let action_type = action.action_type();
         let _type = action_type.text();
 
@@ -293,7 +278,7 @@ impl KeymapWriter {
                 )?;
             }
             Action::Group(g) => {
-                let group = g.group.unwrap_or_else(|| 0);
+                let group = g.group.unwrap_or(0);
 
                 write!(
                     &mut self.buf,
@@ -330,8 +315,8 @@ impl KeymapWriter {
             Action::Terminate => write!(&mut self.buf, "{}{}(){}", prefix, _type, suffix)?,
             Action::Ptr(p) if p.action_type == PtrMove => {
                 // TODO: check these defaults
-                let x = p.x.unwrap_or_else(|| -1);
-                let y = p.y.unwrap_or_else(|| -1);
+                let x = p.x.unwrap_or(-1);
+                let y = p.y.unwrap_or(-1);
 
                 write!(
                     &mut self.buf,
@@ -385,7 +370,7 @@ impl KeymapWriter {
                 write!(&mut self.buf, "{}{}(", prefix, _type)?;
 
                 // TODO: check this default
-                let value = d.value.unwrap_or_else(|| -1);
+                let value = d.value.unwrap_or(-1);
 
                 write!(
                     &mut self.buf,
@@ -402,7 +387,7 @@ impl KeymapWriter {
             }
             Action::Screen(s) if s.action_type == ActionType::SwitchVT => {
                 // TODO: check default
-                let screen = s.screen.unwrap_or_else(|| -1);
+                let screen = s.screen.unwrap_or(-1);
 
                 write!(
                     &mut self.buf,
@@ -458,20 +443,20 @@ impl KeymapWriter {
         let ctx = &keymap.context;
 
         if let Some(name) = keymap.compat_section_name.as_ref() {
-            write!(&mut self.buf, "xkb_compatibility \"{}\" {{\n", name)?;
+            writeln!(&mut self.buf, "xkb_compatibility \"{}\" {{", name)?;
         } else {
-            write!(&mut self.buf, "xkb_compatibility {{\n")?;
+            writeln!(&mut self.buf, "xkb_compatibility {{")?;
         }
 
-        self.write_vmods(&ctx, keymap)?;
+        self.write_vmods(ctx, keymap)?;
 
-        write!(&mut self.buf, "\tinterpret.useModMapMods= AnyLevel;\n")?;
-        write!(&mut self.buf, "\tinterpret.repeat= False;\n")?;
+        writeln!(&mut self.buf, "\tinterpret.useModMapMods= AnyLevel;")?;
+        writeln!(&mut self.buf, "\tinterpret.repeat= False;")?;
 
         for si in keymap.sym_interprets.iter() {
-            write!(
+            writeln!(
                 &mut self.buf,
-                "\tinterpret {}+{}({}) {{\n",
+                "\tinterpret {}+{}({}) {{",
                 match si.sym {
                     Some(sym) => ctx.keysym_text(&sym),
                     None => "Any".into(),
@@ -481,36 +466,35 @@ impl KeymapWriter {
             )?;
 
             if let Some(vmod) = si.virtual_mod {
-                write!(
+                writeln!(
                     &mut self.buf,
-                    "\t\tvirtualModifier= {};\n",
+                    "\t\tvirtualModifier= {};",
                     ctx.mod_index_text(&keymap.mods, vmod)
                 )?;
             }
 
             if si.level_one_only {
-                write!(&mut self.buf, "\t\tuseModMapMods=level1;\n")?;
+                writeln!(&mut self.buf, "\t\tuseModMapMods=level1;")?;
             }
 
             if si.repeat {
-                write!(&mut self.buf, "\t\trepeat= True;\n")?;
+                writeln!(&mut self.buf, "\t\trepeat= True;")?;
             }
 
             // TODO: is `si` guaranteed to have an action?
-            self.write_action(&ctx, keymap, si.action.as_ref(), "\t\taction= ", ";\n")?;
-            write!(&mut self.buf, "\t}};\n")?;
+            self.write_action(ctx, keymap, &si.action, "\t\taction= ", ";\n")?;
+            writeln!(&mut self.buf, "\t}};")?;
         }
 
-        for led in keymap.leds.iter() {
-            if let Some(led) = led {
-                if !led.which_groups.is_empty()
-                    || led.groups != 0
-                    || !led.which_mods.is_empty()
-                    || led.mods.mods != 0
-                    || !led.ctrls.is_empty()
-                {
-                    self.write_led_map(&ctx, led, &keymap.mods)?;
-                }
+        // `flatten`: use Some(..) variants only
+        for led in keymap.leds.iter().flatten() {
+            if !led.which_groups.is_empty()
+                || led.groups != 0
+                || !led.which_mods.is_empty()
+                || led.mods.mods != 0
+                || !led.ctrls.is_empty()
+            {
+                self.write_led_map(ctx, led, &keymap.mods)?;
             }
         }
 
@@ -593,7 +577,7 @@ impl KeymapWriter {
                         &mut self.buf,
                         "\n\t\ttype[Group{}]= \"{}\",",
                         idx + 1,
-                        ctx.xkb_atom_text(_type.name).unwrap_or_else(|| "".into())
+                        ctx.xkb_atom_text(_type.name)
                     )?;
                 }
             } else {
@@ -603,7 +587,7 @@ impl KeymapWriter {
                 write!(
                     &mut self.buf,
                     "\n\t\ttype= \"{}\",",
-                    ctx.xkb_atom_text(_type.name).unwrap_or_else(|| "".into())
+                    ctx.xkb_atom_text(_type.name)
                 )?;
             }
         }
@@ -646,7 +630,7 @@ impl KeymapWriter {
 
             self.write_keysyms(ctx, keymap, key, 0)?;
 
-            write!(&mut self.buf, " ] }};\n")?;
+            writeln!(&mut self.buf, " ] }};")?;
         } else {
             for (idx, group) in key.groups.iter().enumerate() {
                 if idx != 0 {
@@ -670,14 +654,14 @@ impl KeymapWriter {
                             write!(&mut self.buf, ", ")?;
                         }
 
-                        let action = group.levels[level].action.as_ref();
+                        let action = &group.levels[level].action;
                         self.write_action(ctx, keymap, action, "", "")?;
                     }
 
                     write!(&mut self.buf, " ]")?;
                 }
             }
-            write!(&mut self.buf, "\n\t}};\n")?;
+            writeln!(&mut self.buf, "\n\t}};")?;
         }
 
         Ok(())
@@ -686,27 +670,27 @@ impl KeymapWriter {
         let ctx = &keymap.context;
 
         if let Some(name) = keymap.symbols_section_name.as_ref() {
-            write!(&mut self.buf, "xkb_symbols \"{}\" {{\n", name)?;
+            writeln!(&mut self.buf, "xkb_symbols \"{}\" {{", name)?;
         } else {
-            write!(&mut self.buf, "xkb_symbols {{\n")?;
+            writeln!(&mut self.buf, "xkb_symbols {{")?;
         }
 
         for (idx, group) in keymap.group_names.iter().enumerate() {
-            write!(
+            writeln!(
                 &mut self.buf,
-                "\tname[Group{}]=\"{}\";\n",
+                "\tname[Group{}]=\"{}\";",
                 idx + 1,
-                ctx.xkb_atom_text(*group).unwrap_or_else(|| "".into())
+                ctx.xkb_atom_text(*group)
             )?;
         }
         if keymap.num_groups > 0 {
-            write!(&mut self.buf, "\n")?;
+            writeln!(&mut self.buf)?;
         }
 
         for (_kc, key) in keymap.keys.iter() {
-            if key.groups.len() > 0 {
+            if !key.groups.is_empty() {
                 // TODO: find a way to do this without cloning
-                self.write_key(&ctx, keymap, &key.clone())?;
+                self.write_key(ctx, keymap, &key.clone())?;
             }
         }
 
@@ -720,7 +704,7 @@ impl KeymapWriter {
                         write!(
                             &mut self.buf,
                             "\tmodifier_map {} {{ ",
-                            ctx.xkb_atom_text(_mod.name).unwrap_or_else(|| "".into())
+                            ctx.xkb_atom_text(_mod.name)
                         )?;
                     }
 
@@ -735,7 +719,7 @@ impl KeymapWriter {
                 }
             }
             if had_any {
-                write!(&mut self.buf, " }};\n")?;
+                writeln!(&mut self.buf, " }};")?;
             }
         }
 
@@ -748,12 +732,12 @@ impl Keymap {
     fn write_keymap(&self) -> Result<String, Box<dyn std::error::Error>> {
         let mut writer = KeymapWriter { buf: String::new() };
 
-        write!(&mut writer.buf, "xkb_keymap {{\n")?;
+        writeln!(&mut writer.buf, "xkb_keymap {{")?;
         writer.write_keycodes(self)?;
         writer.write_types(self)?;
         writer.write_compat(self)?;
         writer.write_symbols(self)?;
-        write!(&mut writer.buf, "}};\n")?;
+        writeln!(&mut writer.buf, "}};")?;
 
         Ok(writer.buf)
     }

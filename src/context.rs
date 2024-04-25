@@ -9,23 +9,18 @@ use crate::errors::*;
 use crate::rust_xkbcommon::{ContextFlags, RuleNames};
 use crate::utils::*;
 
-
 use thiserror::Error;
 
-#[derive(Debug,Error)]
+#[derive(Debug, Error)]
 pub enum IncludePathResetDefaultsError {
     #[error("Default include paths could not be appended, but previous paths were cleared")]
-    AllDefaultsFailed
-
+    AllDefaultsFailed,
 }
 
-#[derive(Debug,Error)]
+#[derive(Debug, Error)]
 pub enum IncludePathAppendError {
     #[error("The provided directory was not found: {path}")]
-    DirectoryNotFound{ 
-        path: String,
-        error: std::io::Error
-    },
+    DirectoryNotFound { path: String, error: std::io::Error },
 
     #[error("The provided file is not a directory: {0}")]
     IsNotDirectory(String),
@@ -34,8 +29,7 @@ pub enum IncludePathAppendError {
     NoEaccesForFile(String),
 
     #[error("All default includes failed")]
-    AllDefaultsFailed
-
+    AllDefaultsFailed,
 }
 
 #[derive(Debug)]
@@ -98,15 +92,15 @@ impl Context {
             //text_next
         };
 
-        if !context_flags.intersects(ContextFlags::NO_DEFAULT_INCLUDES) {
-            if let Err(_) = context.include_path_append_default() {
-                // TODO: ensure these paths are correct
-                log::error!(
-                    "{:?}: failed to add default include path {}",
-                    XkbMessageCode::NoId,
-                    DFLT_XKB_CONFIG_ROOT
-                );
-            }
+        if !context_flags.intersects(ContextFlags::NO_DEFAULT_INCLUDES)
+            && context.include_path_append_default().is_err()
+        {
+            // TODO: ensure these paths are correct
+            log::error!(
+                "{:?}: failed to add default include path {}",
+                XkbMessageCode::NoId,
+                DFLT_XKB_CONFIG_ROOT
+            );
         }
 
         Ok(context)
@@ -117,7 +111,7 @@ impl Context {
         if self.use_secure_getenv {
             todo!()
         } else {
-                std::env::var(name).ok()
+            std::env::var(name).ok()
         }
     }
 
@@ -125,7 +119,7 @@ impl Context {
         self.failed_includes.len()
     }
 
-    fn failed_include_path_get<'s>(&'s self, idx: usize) -> Option<&'s str> {
+    fn failed_include_path_get(&self, idx: usize) -> Option<&str> {
         self.failed_includes.get(idx).map(|s| s.as_str())
     }
 
@@ -138,8 +132,12 @@ impl Context {
         self.atom_table.intern(string)
     }
 
-    pub(crate) fn xkb_atom_text<'a>(&'a self, atom: Atom) -> Option<&'a str> {
+    /// Version that returns Option
+    pub(crate) fn atom_text(&self, atom: Atom) -> Option<&str> {
         self.atom_table.get(atom)
+    }
+    pub(crate) fn xkb_atom_text(&self, atom: Atom) -> &str {
+        self.atom_table.get(atom).unwrap_or("")
     }
 
     fn get_default_rules(&self) -> String {
@@ -239,10 +237,10 @@ impl Context {
         use std::fs;
 
         let err: Result<(), IncludePathAppendError> = {
-            let metadata = fs::metadata(path)
-                .map_err(|e| IncludePathAppendError::DirectoryNotFound{
+            let metadata =
+                fs::metadata(path).map_err(|e| IncludePathAppendError::DirectoryNotFound {
                     path: path.into(),
-                    error: e
+                    error: e,
                 })?;
 
             if !metadata.is_dir() {
@@ -252,7 +250,6 @@ impl Context {
             // `check_eacces`
             let mode = AccessFlags::R_OK | AccessFlags::X_OK;
             if !check_permissions(&metadata, mode) {
-
                 return Err(IncludePathAppendError::NoEaccesForFile(path.into()));
             }
 
@@ -260,17 +257,16 @@ impl Context {
         };
 
         if let Err(err) = err {
-
             self.failed_includes.push(path.into());
-            log::debug!("{:?}: Include path failed: {} ({})",
+            log::debug!(
+                "{:?}: Include path failed: {} ({})",
                 XkbMessageCode::NoId,
-                path, err);
+                path,
+                err
+            );
 
-            return Err(err);
-
-
+            Err(err)
         } else {
-
             self.includes.push(path.into());
             log::debug!("{:?}: Include path added: {}", XkbMessageCode::NoId, path);
             Ok(())

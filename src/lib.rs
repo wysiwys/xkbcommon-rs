@@ -25,8 +25,10 @@
 //! clients, and the two should generally not be mixed.
 //!
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
-//#![allow(warnings)]
-#![crate_name = "xkb_rust"]
+#![allow(clippy::module_inception)]
+#![allow(clippy::unwrap_or_default)]
+#![allow(clippy::absurd_extreme_comparisons)]
+#![crate_name = "xkbcommon_rs"]
 #![forbid(unsafe_code)]
 mod keysyms_utf;
 // generated in project 26
@@ -39,6 +41,7 @@ mod atom;
 mod context;
 pub mod errors;
 mod keymap;
+mod message_codes;
 mod state;
 
 mod rust_xkbcommon;
@@ -47,8 +50,8 @@ mod xkbcomp;
 mod parser_utils;
 mod utils;
 
-mod utf8;
 mod text;
+mod utf8;
 
 mod config;
 

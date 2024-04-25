@@ -240,8 +240,6 @@ fn rmlvo() {
     )
     .unwrap();
 
-    // TODO; something is wrong with the include paths here,
-    //      so the compilation fails for the wrong reason.
     test_rmlvo(
         context.clone(),
         "does-not-exist",

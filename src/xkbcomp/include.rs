@@ -57,16 +57,6 @@ use logos::Logos;
 
 const INCLUDE_MAX_DEPTH: u32 = 15;
 
-impl Context {
-    pub(crate) fn exceeds_include_max_depth(&self, include_depth: u32) -> bool {
-        if include_depth >= INCLUDE_MAX_DEPTH {
-            log::error!("Exceeded include depth threshold {}", INCLUDE_MAX_DEPTH);
-            return true;
-        } else {
-            return false;
-        }
-    }
-}
 struct IncludeStmtPartBuilder {
     file: Option<String>,
     merge: MergeMode,
@@ -217,7 +207,7 @@ impl XkbFileType {
 
 impl Context {
     fn log_include_paths(&self) {
-        if self.includes.len() > 0 {
+        if !self.includes.is_empty() {
             log::error!(
                 "{:?}: {} include paths searched",
                 XkbError::IncludedFileNotFound,
@@ -245,6 +235,7 @@ impl Context {
         file_type: XkbFileType,
         offset: &mut usize,
     ) -> Option<(PathBuf, std::fs::File)> {
+        //TODO: buf[PATH_MAX]
         let name = name.cloned().unwrap_or_else(|| "".into());
         let type_dir = file_type.directory_for_include();
 
@@ -253,6 +244,7 @@ impl Context {
                 .include_path_get(i)
                 .expect("Should have include path here");
 
+            // TODO: limit buffer to size
             let buf = format!("{}/{}/{}", include_path, type_dir, name);
 
             if let Ok(metadata) = std::fs::metadata(&buf) {
@@ -282,68 +274,82 @@ impl Context {
     }
 }
 
+impl Context {
+    pub(crate) fn exceeds_include_max_depth(&self, include_depth: u32) -> bool {
+        if include_depth >= INCLUDE_MAX_DEPTH {
+            log::error!("Exceeded include depth threshold {}", INCLUDE_MAX_DEPTH);
+            return true;
+        }
 
-pub(super) fn process_include_file(
-    ctx: &mut Context,
-    stmt: &IncludeStmtPart,
-    file_type: XkbFileType,
-) -> Result<XkbFile, ProcessIncludeError> {
-    let mut offset = 0;
-    let (_, file) = ctx.find_file_in_xkb_path(Some(&stmt.file), file_type, &mut offset)
-    .ok_or_else(|| ProcessIncludeError::NoSuchFile{ 
-        path: stmt.file.clone().into(), file_type})?;
+        false
+    }
 
-    let mut ret = None;
-    let mut current_file = Some(file);
-
-    while let Some(file) = current_file {
-        let xkb_file =
-            XkbFile::parse_file(ctx, file, &stmt.file, stmt.map.as_ref()
-                .map(|s| s.as_str()))
-                .map_err(|error| ProcessIncludeError::ParseFileFailed{path: stmt.file.clone().into(), error})?; 
-
-        current_file = None;
-
-        if let Some(xkb_file) = xkb_file {
-            if xkb_file.file_type() != file_type {
-                log::error!("{:?}: Include file of wrong type (expected {:?}, got {:?}); Include file \"{}\" ignored",
-                XkbError::InvalidIncludedFile,
+    pub(super) fn process_include_file(
+        &mut self,
+        stmt: &IncludeStmtPart,
+        file_type: XkbFileType,
+    ) -> Result<XkbFile, ProcessIncludeError> {
+        let mut offset = 0;
+        let (_path, file) = self
+            .find_file_in_xkb_path(Some(&stmt.file), file_type, &mut offset)
+            .ok_or_else(|| ProcessIncludeError::NoSuchFile {
+                path: stmt.file.clone().into(),
                 file_type,
-                xkb_file.file_type(),
-                stmt.file);
+            })?;
 
-                ret = None;
-            } else {
-                ret = Some(xkb_file);
-                break;
+        let mut ret = None;
+        let mut current_file = Some(file);
+
+        while let Some(file) = current_file.take() {
+            let xkb_file = XkbFile::parse_file(self, file, &stmt.file, stmt.map.as_deref())
+                .map_err(|error| ProcessIncludeError::ParseFileFailed {
+                    path: stmt.file.clone().into(),
+                    error,
+                })?;
+
+            if let Some(xkb_file) = xkb_file {
+                if xkb_file.file_type() != file_type {
+                    log::error!("{:?}: Include file of wrong type (expected {:?}, got {:?}); Include file \"{}\" ignored",
+                    XkbError::InvalidIncludedFile,
+                    file_type,
+                    xkb_file.file_type(),
+                    stmt.file);
+
+                    ret = None;
+                } else {
+                    ret = Some(xkb_file);
+                    break;
+                }
+            }
+            offset += 1;
+            if let Some((_, file)) =
+                self.find_file_in_xkb_path(Some(&stmt.file), file_type, &mut offset)
+            {
+                current_file = Some(file);
             }
         }
-        offset += 1;
-        if let Some((_, file)) = ctx.find_file_in_xkb_path(Some(&stmt.file), file_type, &mut offset)
-        {
-            current_file = Some(file);
-        }
-    }
-    // FIXME: we have to check recursive includes here (or somewhere)
 
-    if let Some(xkb_file) = ret {
-        return Ok(xkb_file);
-    } else {
-        if let Some(map) = stmt.map.as_ref() {
-            log::error!(
-                "{:?}: Couldn't process include statement for '{}({})'",
-                XkbError::InvalidIncludedFile,
-                stmt.file,
-                map
-            );
+        if let Some(xkb_file) = ret {
+            Ok(xkb_file)
         } else {
-            log::error!(
-                "{:?}: Couldn't process include statement for '{}'",
-                XkbError::InvalidIncludedFile,
-                stmt.file
-            );
-        }
+            if let Some(map) = stmt.map.as_ref() {
+                log::error!(
+                    "{:?}: Couldn't process include statement for '{}({})'",
+                    XkbError::InvalidIncludedFile,
+                    stmt.file,
+                    map
+                );
+            } else {
+                log::error!(
+                    "{:?}: Couldn't process include statement for '{}'",
+                    XkbError::InvalidIncludedFile,
+                    stmt.file
+                );
+            }
 
-        return Err(ProcessIncludeError::InvalidIncludedFile(stmt.file.clone().into()));
+            Err(ProcessIncludeError::InvalidIncludedFile(
+                stmt.file.clone().into(),
+            ))
+        }
     }
 }

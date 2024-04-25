@@ -52,14 +52,11 @@ pub(crate) enum RulesToken {
     Identifier(String),
 }
 
-
 #[derive(Default, Clone, Debug, PartialEq)]
 enum IncludeTokenLexingError {
-
     #[default]
-    Unrecognized
+    Unrecognized,
 }
-
 
 #[derive(Logos, Debug, PartialEq)]
 #[logos(error = IncludeTokenLexingError)]
@@ -272,7 +269,10 @@ impl<'c> Matcher<'c> {
         // This needs a separate lexer
 
         if include_depth >= MAX_INCLUDE_DEPTH {
-            log::error!("maximum include depth {} exceeded; maybe there is an include loop?", MAX_INCLUDE_DEPTH);
+            log::error!(
+                "maximum include depth {} exceeded; maybe there is an include loop?",
+                MAX_INCLUDE_DEPTH
+            );
             return Ok(());
         }
 
@@ -285,8 +285,10 @@ impl<'c> Matcher<'c> {
             match token.expect("Lexer failed on token") {
                 DoublePercent => buf += "%",
                 Home => {
-                    let home = self.ctx.getenv("HOME")
-                    .ok_or(MatcherError::IncludeHButNoHOME)?;
+                    let home = self
+                        .ctx
+                        .getenv("HOME")
+                        .ok_or(MatcherError::IncludeHButNoHOME)?;
 
                     buf += home.as_str();
                 }
@@ -310,47 +312,43 @@ impl<'c> Matcher<'c> {
             }
         }
 
-        let file = std::fs::File::open(&buf)
-            .map_err(|e| {
-                
-                let error_msg = format!(
-                    "{:?}: Failed to open included XKB rules \"{}\"",
-                    XkbMessageCode::NoId,
-                    buf
-                );
-                log::error!("{}", error_msg);
+        let file = std::fs::File::open(&buf).map_err(|e| {
+            let error_msg = format!(
+                "{:?}: Failed to open included XKB rules \"{}\"",
+                XkbMessageCode::NoId,
+                buf
+            );
+            log::error!("{}", error_msg);
 
-
-
-                MatcherError::FailedToOpenXKBRules{
-                rules: buf.clone(), error: e}
-            })?;
+            MatcherError::FailedToOpenXKBRules {
+                rules: buf.clone(),
+                error: e,
+            }
+        })?;
 
         // Read the rules file
         if let Err(e) = self.read_rules_file(include_depth + 1, file, buf.clone().into()) {
-            log::error!("{:?}: No components returned from included XKB rules \"{}\"", 
-                XkbMessageCode::NoId, 
-                buf);
-            return Err(e);
+            log::error!(
+                "{:?}: No components returned from included XKB rules \"{}\"",
+                XkbMessageCode::NoId,
+                buf
+            );
+            Err(e)
         } else {
-            return Ok(());
+            Ok(())
         }
-
     }
     fn mapping_start_new(&mut self) {
         self.mapping = Mapping::default();
     }
 
     fn mapping_set_mlvo(&mut self, ident: String) {
-
-        let pos = RulesMlvo::iter()
-            .enumerate()
-            .filter(|(_,mlvo)| {
-                let sval = mlvo.sval();
-                ident.len() >= sval.len() //TODO: equals?
+        // TODO: make this and its equivalent for kccgst more concise
+        let pos = RulesMlvo::iter().enumerate().find(|(_, mlvo)| {
+            let sval = mlvo.sval();
+            ident.len() >= sval.len() //TODO: equals?
                         && ident[..sval.len()] == *sval
-            })
-            .next();
+        });
 
         // Not found
         let (mlvo_pos, mlvo) = match pos {
@@ -361,8 +359,9 @@ impl<'c> Matcher<'c> {
                 );
                 self.mapping.skip = true;
                 return;
-            },
-            Some(p) => p };
+            }
+            Some(p) => p,
+        };
 
         let mlvo_sval = mlvo.sval();
 
@@ -415,15 +414,11 @@ impl<'c> Matcher<'c> {
     }
 
     fn mapping_set_kccgst(&mut self, ident: String) {
-        
-        let pos = RulesKccgst::iter()
-            .enumerate()
-            .filter(|(_,kccgst)| {
-                let sval = kccgst.sval();
-                ident.len() >= sval.len() //TODO: equals?
+        let pos = RulesKccgst::iter().enumerate().find(|(_, kccgst)| {
+            let sval = kccgst.sval();
+            ident.len() >= sval.len() //TODO: equals?
                         && ident[..sval.len()] == *sval
-            })
-            .next();
+        });
 
         // Not found
         let (kccgst_pos, kccgst) = match pos {
@@ -488,17 +483,13 @@ impl<'c> Matcher<'c> {
             if self.mapping.variant_index.is_none() {
                 if self.rmlvo.variants.len() > 1 {
                     self.mapping.skip = true;
-                    return;
                 }
             } else if let Some(variant_idx) = self.mapping.variant_index {
                 if self.rmlvo.variants.len() == 1 || variant_idx >= self.rmlvo.variants.len() {
                     self.mapping.skip = true;
-                    return;
                 }
             }
         }
-
-        return;
     }
 
     fn rule_start_new(&mut self) {
@@ -673,7 +664,7 @@ impl<'c> Matcher<'c> {
                     if current_ch != Some(sfx) {
                         return match current_ch {
                             Some(c) => Err(MatcherError::LexerUnexpectedChar(c)),
-                            None => Err(MatcherError::LexerEarlyEOF)
+                            None => Err(MatcherError::LexerEarlyEOF),
                         };
                     }
 
@@ -708,7 +699,7 @@ impl<'c> Matcher<'c> {
 
             // If we didn't get one, skip silently.
             let expanded_value = match expanded_value {
-                Some(s) if s.sval.len() > 0 => s,
+                Some(s) if !s.sval.is_empty() => s,
                 _ => continue,
             };
 
@@ -777,10 +768,8 @@ impl<'c> Matcher<'c> {
                 matched = self.match_value_and_mark(value, &mut to_str, match_type);
                 self.rmlvo.model = to_str;
             } else if mlvo == Some(RulesMlvo::Layout) {
-                let idx = match self.mapping.layout_index {
-                    None => 0,
-                    Some(idx) => idx,
-                };
+                let idx = self.mapping.layout_index.unwrap_or(0);
+
                 let mut to_str = self
                     .rmlvo
                     .layouts
@@ -790,10 +779,8 @@ impl<'c> Matcher<'c> {
                 matched = self.match_value_and_mark(value, &mut to_str, match_type);
                 self.rmlvo.layouts[idx] = to_str;
             } else if mlvo == Some(RulesMlvo::Variant) {
-                let idx = match self.mapping.variant_index {
-                    None => 0,
-                    Some(idx) => idx,
-                };
+                let idx = self.mapping.variant_index.unwrap_or(0);
+
                 let mut to_str = self
                     .rmlvo
                     .variants
@@ -873,7 +860,7 @@ fn split_comma_separated_mlvo(s: Option<&String>) -> Vec<MatchedSval> {
         None => "",
     };
 
-    let substrings: Vec<String> = s.split(",").map(|s| s.to_owned()).collect();
+    let substrings: Vec<String> = s.split(',').map(|s| s.to_owned()).collect();
 
     // TODO: Make sure the array returned by this function always includes at least one value.
 
@@ -898,6 +885,7 @@ enum MatcherState {
     GroupName,
     GroupElement,
     IncludeStatement,
+    IncludeStatementEnd,
     MappingMlvo,
     MappingKccgst,
     RuleMlvoFirst,
@@ -909,7 +897,6 @@ enum MatcherState {
     RuleKccgst,
     Unexpected(Option<Result<RulesToken, &'static str>>),
     Finish,
-
 }
 
 impl<'c> Matcher<'c> {
@@ -939,7 +926,7 @@ impl<'c> Matcher<'c> {
                         self.mapping_start_new();
                         self.mapping_set_mlvo(s);
                         state = MappingMlvo;
-                    },
+                    }
                     t => state = Unexpected(t),
                 },
 
@@ -952,7 +939,7 @@ impl<'c> Matcher<'c> {
                     Some(Ok(RulesToken::Identifier(s))) => {
                         self.group_add_element(s)?;
                         state = GroupElement;
-                    },
+                    }
                     Some(Ok(RulesToken::EndOfLine)) => state = Initial,
                     t => state = Unexpected(t),
                 },
@@ -960,8 +947,14 @@ impl<'c> Matcher<'c> {
                 IncludeStatement => match lexer.next() {
                     Some(Ok(RulesToken::Identifier(s))) => {
                         self.include(include_depth, s)?;
-                        state = Initial;
-                    },
+                        state = IncludeStatementEnd;
+                    }
+                    t => state = Unexpected(t),
+                },
+
+                IncludeStatementEnd => match lexer.next() {
+                    Some(Ok(RulesToken::EndOfLine)) => state = Initial,
+
                     t => state = Unexpected(t),
                 },
 
@@ -988,7 +981,7 @@ impl<'c> Matcher<'c> {
                             self.mapping_verify();
                         }
                         state = RuleMlvoFirst;
-                    },
+                    }
                     t => state = Unexpected(t),
                 },
 
@@ -1042,17 +1035,17 @@ impl<'c> Matcher<'c> {
                             self.rule_apply_if_matches()?;
                         }
                         state = RuleMlvoFirst;
-                    },
+                    }
                     t => state = Unexpected(t),
                 },
 
                 Unexpected(t) => match t {
                     None => return Err(MatcherError::UnexpectedFinish),
                     Some(Ok(t)) => return Err(MatcherError::UnexpectedToken(format!("{:?}", t))),
-                    Some(Err(e)) => return Err(MatcherError::LexerError(e))
+                    Some(Err(e)) => return Err(MatcherError::LexerError(e)),
                 },
 
-                Finish => return Ok(())
+                Finish => return Ok(()),
             }
         }
 
@@ -1077,19 +1070,21 @@ impl<'l> Matcher<'l> {
                 path,
                 e
             );
-            return Err(MatcherError::CouldNotReadRulesToString{
-                path,
-                error: e
-
-            });
+            return Err(MatcherError::CouldNotReadRulesToString { path, error: e });
         };
 
         // scanner_init
-        let lexer = RulesToken::lexer(&string);
+        let input = crate::lexer::check_supported_char_encoding(&string).map_err(|_| {
+                log::error!("This could be a file encoding issue. Supported encodings must be backward compatible with ASCII");
+                log::error!("E.g. ISO/CEI 8859 and UTF-8 are supported but UTF-16, UTF-32 and CP1026 are not.");
+                MatcherError::WrongEncoding(path)
+            })?;
 
-        let result = self.state_machine(lexer, include_depth);
-        
-        result
+        let lexer = RulesToken::lexer(input);
+
+        // TODO: basic detection of wrong character encoding
+
+        self.state_machine(lexer, include_depth)
     }
 }
 
@@ -1106,7 +1101,7 @@ impl ComponentNames {
         if let Some((path, file)) = opt_file {
             let result = matcher.read_rules_file(0, file, path.clone());
 
-            if result.is_err() 
+            if result.is_err()
             || matcher.kccgst.get(&RulesKccgst::Keycodes).is_none() //keycodes 
             || matcher.kccgst.get(&RulesKccgst::Types).is_none() //types
             || matcher.kccgst.get(&RulesKccgst::Compat).is_none() //compat
@@ -1152,7 +1147,7 @@ impl ComponentNames {
 
         //TODO: logging
 
-        return Ok(out);
+        Ok(out)
     }
 }
 

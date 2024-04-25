@@ -129,7 +129,7 @@ Decl: Result<Vec<Decl>,AstError> = {
 	#[precedence(level="0")]
 	<m: MergeMode> <s:"STRING"> => {
 		let stmt = IncludeStmt::create(
-			&mut param.ctx, &s, m);
+			param.ctx, &s, m);
 		Ok(vec![Decl::Include(stmt)])	
 	},
 	#[precedence(level="1")] #[assoc(side="right")]
@@ -204,7 +204,7 @@ KeyNameDecl: Result<KeycodeDef,AstError> = {
 
 KeyAliasDecl: Result<KeyAliasDef,AstError> = {
 	"ALIAS" <a:KeyName> "=" <b:KeyName> ";"
-	=> KeyAliasDef::create(a,b)
+	=> Ok(KeyAliasDef::create(a,b))
 	}
 
 
@@ -569,24 +569,24 @@ Keysym: Option<Keysym> = {
 		if int < XKB_KEYSYM_MIN {
 			log::warn!("{:?}: Unrecognized keysym \"{}\"", 
 				XkbWarning::UnrecognizedKeysym, int); 
-			return None;
+			None
 		}
 
 		// Special case for digits 0..9
 		else if int < 10 { // XKB_KEY_0 .. XKB_KEY_9
-			return Some(Keysym::new((Keysym::_0).raw() + int));
+			Some(Keysym::new((Keysym::_0).raw() + int))
 		}
 		else {
 
 			log::warn!("{:?}: numeric keysym \"{:?}\" ({:#x})",
 				XkbWarning::NumericKeysym, int, int);
 			if int <= XKB_KEYSYM_MAX {
-				return Some(Keysym::new(int));
+				Some(Keysym::new(int))
 			}
 			else {
 				log::warn!("{:?}: Unrecognized keysym \"{:?}\"",
 					XkbWarning::UnrecognizedKeysym, int);
-				return None;
+				None
 
 			}
 

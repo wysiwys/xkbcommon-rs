@@ -3,8 +3,6 @@ use crate::test::*;
 
 use crate::context::Context;
 
-
-
 pub(super) struct TestData<'s> {
     // Rules file
     pub(super) rules: &'s str,
@@ -26,7 +24,6 @@ pub(super) struct TestData<'s> {
 }
 
 pub(super) fn test_rules(ctx: &mut Context, data: TestData) -> bool {
-
     eprintln!(
         "\n\nChecking: {}\t{}\t{}\t{}\t{}",
         data.rules, data.model, data.layout, data.variant, data.options
@@ -77,17 +74,51 @@ pub(super) fn test_rules(ctx: &mut Context, data: TestData) -> bool {
 fn rules_file_test_rules() {
     let mut context = test_get_context(TestContextFlags::empty()).unwrap();
 
-    let test1 = TestData {
-        rules: "simple".into(),
-        model: "my_model".into(),
-        layout: "my_layout".into(),
-        variant: "my_variant".into(),
-        options: "my_option".into(),
+    let utf8_with_bom = TestData {
+        rules: "utf-8_with_bom",
+        model: "my_model",
+        variant: "my_variant",
+        layout: "my_layout",
+        options: "my_option",
 
-        keycodes: "my_keycodes".into(),
-        types: "my_types".into(),
-        compat: "my_compat|some:compat".into(),
-        symbols: "my_symbols+extra_variant".into(),
+        keycodes: "my_keycodes",
+        types: "my_types",
+        compat: "my_compat|some:compat",
+        symbols: "my_symbols+extra_variant",
+
+        should_fail: false,
+    };
+
+    assert!(test_rules(&mut context, utf8_with_bom));
+
+    let utf16le_with_bom = TestData {
+        rules: "utf-16le_with_bom",
+        model: "my_model",
+        variant: "my_variant",
+        layout: "my_layout",
+        options: "my_option",
+
+        keycodes: "my_keycodes",
+        types: "my_types",
+        compat: "my_compat|some:compat",
+        symbols: "my_symbols+extra_variant",
+
+        should_fail: true,
+    };
+
+    assert!(test_rules(&mut context, utf16le_with_bom));
+
+    let test1 = TestData {
+        rules: "simple",
+        model: "my_model",
+        layout: "my_layout",
+        variant: "my_variant",
+        options: "my_option",
+
+        keycodes: "my_keycodes",
+        types: "my_types",
+        compat: "my_compat|some:compat",
+        symbols: "my_symbols+extra_variant",
 
         should_fail: false,
     };
@@ -95,16 +126,16 @@ fn rules_file_test_rules() {
     assert!(test_rules(&mut context, test1));
 
     let test2 = TestData {
-        rules: "simple".into(),
-        model: "".into(),
-        layout: "".into(),
-        variant: "".into(),
-        options: "".into(),
+        rules: "simple",
+        model: "",
+        layout: "",
+        variant: "",
+        options: "",
 
-        keycodes: "default_keycodes".into(),
-        types: "default_types".into(),
-        compat: "default_compat".into(),
-        symbols: "default_symbols".into(),
+        keycodes: "default_keycodes",
+        types: "default_types",
+        compat: "default_compat",
+        symbols: "default_symbols",
 
         should_fail: false,
     };
@@ -112,16 +143,16 @@ fn rules_file_test_rules() {
     assert!(test_rules(&mut context, test2));
 
     let test3 = TestData {
-        rules: "groups".into(),
-        model: "pc104".into(),
-        layout: "foo".into(),
-        variant: "".into(),
-        options: "".into(),
+        rules: "groups",
+        model: "pc104",
+        layout: "foo",
+        variant: "",
+        options: "",
 
-        keycodes: "something(pc104)".into(),
-        types: "default_types".into(),
-        compat: "default_compat".into(),
-        symbols: "default_symbols".into(),
+        keycodes: "something(pc104)",
+        types: "default_types",
+        compat: "default_compat",
+        symbols: "default_symbols",
 
         should_fail: false,
     };
@@ -129,16 +160,16 @@ fn rules_file_test_rules() {
     assert!(test_rules(&mut context, test3));
 
     let test4 = TestData {
-        rules: "groups".into(),
-        model: "foo".into(),
-        layout: "ar".into(),
-        variant: "bar".into(),
-        options: "".into(),
+        rules: "groups",
+        model: "foo",
+        layout: "ar",
+        variant: "bar",
+        options: "",
 
-        keycodes: "default_keycodes".into(),
-        types: "default_types".into(),
-        compat: "default_compat".into(),
-        symbols: "my_symbols+(bar)".into(),
+        keycodes: "default_keycodes",
+        types: "default_types",
+        compat: "default_compat",
+        symbols: "my_symbols+(bar)",
 
         should_fail: false,
     };
@@ -146,16 +177,16 @@ fn rules_file_test_rules() {
     assert!(test_rules(&mut context, test4));
 
     let test5 = TestData {
-        rules: "simple".into(),
-        model: "".into(),
-        layout: "my_layout,second_layout".into(),
-        variant: "my_variant".into(),
-        options: "my_option".into(),
+        rules: "simple",
+        model: "",
+        layout: "my_layout,second_layout",
+        variant: "my_variant",
+        options: "my_option",
 
-        keycodes: "N/A".into(),
-        types: "N/A".into(),
-        compat: "N/A".into(),
-        symbols: "N/A".into(),
+        keycodes: "N/A",
+        types: "N/A",
+        compat: "N/A",
+        symbols: "N/A",
 
         should_fail: true,
     };
@@ -163,16 +194,16 @@ fn rules_file_test_rules() {
     assert!(test_rules(&mut context, test5));
 
     let test6 = TestData {
-        rules: "index".into(),
-        model: "".into(),
-        layout: "br,al,cn,az".into(),
-        variant: "".into(),
-        options: "some:opt".into(),
+        rules: "index",
+        model: "",
+        layout: "br,al,cn,az",
+        variant: "",
+        options: "some:opt",
 
-        keycodes: "default_keycodes".into(),
-        types: "default_types".into(),
-        compat: "default_compat".into(),
-        symbols: "default_symbols+extra:1+extra:2+extra:3+extra:4".into(),
+        keycodes: "default_keycodes",
+        types: "default_types",
+        compat: "default_compat",
+        symbols: "default_symbols+extra:1+extra:2+extra:3+extra:4",
 
         should_fail: false,
     };
@@ -180,16 +211,16 @@ fn rules_file_test_rules() {
     assert!(test_rules(&mut context, test6));
 
     let test7 = TestData {
-        rules: "multiple-options".into(),
-        model: "my_model".into(),
-        layout: "my_layout".into(),
-        variant: "my_variant".into(),
-        options: "option3,option1,colon:opt,option11".into(),
+        rules: "multiple-options",
+        model: "my_model",
+        layout: "my_layout",
+        variant: "my_variant",
+        options: "option3,option1,colon:opt,option11",
 
-        keycodes: "my_keycodes".into(),
-        types: "my_types".into(),
-        compat: "my_compat+some:compat+group(bla)".into(),
-        symbols: "my_symbols+extra_variant+compose(foo)+keypad(bar)+altwin(menu)".into(),
+        keycodes: "my_keycodes",
+        types: "my_types",
+        compat: "my_compat+some:compat+group(bla)",
+        symbols: "my_symbols+extra_variant+compose(foo)+keypad(bar)+altwin(menu)",
 
         should_fail: false,
     };

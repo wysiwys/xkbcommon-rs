@@ -1,5 +1,10 @@
+// - Rewrote to create a name-to-keysym lookup
+//-------------------------------
+// Original license:
+//
 // SPDX-License-Identifier: MIT OR Apache-2.0 OR Zlib
 // Copyright 2022-2023 John Nunley
+//
 //
 // Licensed under the Apache License, Version 2.0, the MIT License, and
 // the Zlib license ("the Licenses"), you may not use this file except in
@@ -33,17 +38,18 @@
 use anyhow::Result;
 use regex::Regex;
 use std::{
+    env,
     fmt::Write as _,
     fs,
     io::{prelude::*, BufReader, BufWriter},
     path::Path,
 };
 
-pub fn generate(outpath: &str) -> Result<()> {
+fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     // get the list of files to process
-    let prefix = Path::new("keysym-generator/x11-headers");
+    let prefix = Path::new("/usr/include/X11/");
     let files = [
         "keysymdef.h",
         "XF86keysym.h",
@@ -53,6 +59,7 @@ pub fn generate(outpath: &str) -> Result<()> {
     ];
 
     // open the output file
+    let outpath = env::args_os().nth(1).expect("output file name");
     let mut outfile = BufWriter::new(fs::File::create(outpath)?);
 
     write!(
@@ -78,31 +85,10 @@ pub fn generate(outpath: &str) -> Result<()> {
 // See the Licenses for the specific language governing permissions and
 // limitations under the Licenses.
 
-use super::Keysym;
-
-/// A list of raw keyboard symbols.
-pub mod key {{
-    use crate::RawKeysym;
-
-    #[doc(alias = \"XK_NoSymbol\")]
-    pub const NoSymbol: RawKeysym = 0x0;
+use xkeysym::Keysym;
 "
     )?;
 
-    // Items on the keysym type.
-    let mut keysym_items = "impl Keysym {
-    #[doc(alias = \"XK_NoSymbol\")]
-    /// The \"empty\" keyboard symbol.
-    pub const NoSymbol: Keysym = Keysym(key::NoSymbol);\n"
-        .to_string();
-
-    // The matcher for dumping the keysym's name.
-    let mut keysym_dump = "
-#[allow(unreachable_patterns)]
-pub(crate) const fn name(keysym: Keysym) -> Option<&'static str> {
-    match keysym {
-        Keysym::NoSymbol => Some(\"XK_NoSymbol\"),\n"
-        .to_string();
 
     // we're looking for lines of the following form:
     // #define {some prefix}XK_{some key name} {some key code}
@@ -115,7 +101,7 @@ pub(crate) const fn name(keysym: Keysym) -> Option<&'static str> {
     let hex_matcher = Regex::new(r#"0x([0-9a-fA-F]+)"#)?;
 
     // open the file and process the lines
-    files
+    let mut data = files
         .iter()
         .map(|fname| prefix.join(fname))
         .inspect(|path| tracing::info!("Opening {:?}", path))
@@ -144,7 +130,7 @@ pub(crate) const fn name(keysym: Keysym) -> Option<&'static str> {
                 _ => None,
             }
         })
-        .try_for_each(|(name, value)| {
+        .flat_map(|(name, value)| {
             // if the value is wrapped in _EVDEVK(*), unwrap it
             let (is_evdevk, hex_value) = if let Some(captures) = evdevk.captures(&value) {
                 (true, captures.get(1))
@@ -159,14 +145,14 @@ pub(crate) const fn name(keysym: Keysym) -> Option<&'static str> {
                 let hex_value = hex_value.as_str();
 
                 // compute the value of the keysym
-                let mut hex_value = u64::from_str_radix(hex_value, 16)?;
+                let mut hex_value = u64::from_str_radix(hex_value, 16).ok()?;
                 if is_evdevk {
                     hex_value += 0x10081000;
                 }
 
                 // there is a duplicate symbol somewhere in here
                 if name.contains("Ydiaeresis") && hex_value == 0x100000ee {
-                    return Ok(());
+                    return None;
                 }
 
                 // split apart the symbol at the end
@@ -187,49 +173,102 @@ pub(crate) const fn name(keysym: Keysym) -> Option<&'static str> {
                     &symbol
                 );
 
-                writeln!(outfile, "    #[doc(alias = \"{}\")]", &name)?;
+                let keysym_str = format!(
+                    "{}{}",
+                    prefix,
+                    &symbol
+                );
 
-                // write out an entry for it
-                writeln!(
-                    outfile,
-                    "    pub const {}: RawKeysym = {:#x};",
-                    &keysym_name, hex_value
-                )?;
+                return Some((hex_value, keysym_str, keysym_name));
 
-                // Write an IMPL for it.
-                writeln!(keysym_items, "    #[doc(alias = \"{}\")]", &name)?;
-                writeln!(
-                    keysym_items,
-                    "    pub const {}: Keysym = Keysym(key::{});",
-                    &keysym_name, &keysym_name
-                )?;
-
-                // Write a match entry for it.
-                writeln!(
-                    keysym_dump,
-                    "        Keysym::{} => Some(\"{}\"),",
-                    &keysym_name, &name
-                )
-                .unwrap();
             }
 
-            anyhow::Ok(())
-        })?;
+            None
+        }).collect::<Vec<_>>();
 
-    writeln!(outfile, "}}")?;
+    
+    let mut name_to_keysym_icase = data.clone();
+    name_to_keysym_icase.sort_by(|a,b| {
 
-    // Write out the items.
-    keysym_items.push_str("}\n");
+        let a_lower = a.1.to_lowercase();
+        let b_lower = b.1.to_lowercase();
 
+        let a_is_xf86 = a.1.starts_with("XF86");
+        let b_is_xf86 = b.1.starts_with("XF86");
+
+        /*
+        if a_is_xf86 && !b_is_xf86 {
+
+            std::cmp::Ordering::Greater
+        } else if !a_is_xf86 && b_is_xf86 {
+            std::cmp::Ordering::Less
+        }
+        */
+        if a_lower < b_lower {
+            std::cmp::Ordering::Less
+        } else if a_lower > b_lower {
+            std::cmp::Ordering::Greater
+        } else {
+            a.1.partial_cmp(&b.1).unwrap()
+        }
+    });
+
+
+    // sort data by hex value
+    // TODO: ensure this sorts by raw keysym ascending
+    data.sort_by(|a,b| a.0.partial_cmp(&b.0).unwrap());
+
+    // The phf_map
+    let mut keysym_dump = format!("
+use phf::phf_ordered_map;
+#[allow(unreachable_patterns)]
+pub(crate) static KEYSYM_TO_NAME: [(Keysym, &'static str); {}] = [
+        (xkeysym::NO_SYMBOL, \"NoSymbol\"),\n",
+        data.len() + 1
+        );
+    data.iter()
+        .for_each(|(hex_value, keysym_str, keysym_name)| {
+            // Write a match entry for it.
+            writeln!(
+                keysym_dump,
+                "        (Keysym::{}, \"{}\"),",
+                &keysym_name, &keysym_str
+            )
+            .unwrap();
+
+        });
     // Write out the keysym dump.
     keysym_dump.push_str(
         "
-        _ => None,
-    }
-}",
+];",
     );
 
-    writeln!(outfile, "{keysym_items}\n{keysym_dump}",)?;
+    let mut name_to_keysym = "
+#[allow(unreachable_patterns)]
+pub(crate) static NAME_TO_KEYSYM: phf::OrderedMap<&'static str, Keysym> = phf_ordered_map! {
+        \"NoSymbol\" => Keysym::NoSymbol,\n"
+        .to_string();
+    
+    name_to_keysym_icase.iter()
+        .for_each(|(_, keysym_str, keysym_name)| {
+            // Write a match entry for it.
+            writeln!(
+                name_to_keysym,
+                "        \"{}\" => Keysym::{},",
+                &keysym_str, &keysym_name
+            )
+            .unwrap();
+
+        });
+    // Write out the keysym dump.
+    name_to_keysym.push_str(
+        "
+};",
+    );
+
+
+    writeln!(outfile, "{name_to_keysym}\n{keysym_dump}",)?;
 
     Ok(())
 }
+

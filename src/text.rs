@@ -75,8 +75,6 @@ pub(crate) static CTRL_MASK_NAMES: phf::OrderedMap<UniCase<&'static str>, Action
 
 };
 
-//TODO: remaining lists
-
 pub(crate) static MOD_COMPONENT_MASK_NAMES: phf::OrderedMap<UniCase<&'static str>, StateComponent> = phf::phf_ordered_map! {
 
         UniCase::ascii("base") => StateComponent::MODS_DEPRESSED,
@@ -89,14 +87,17 @@ pub(crate) static MOD_COMPONENT_MASK_NAMES: phf::OrderedMap<UniCase<&'static str
 
 };
 
-pub(crate) static GROUP_COMPONENT_MASK_NAMES: phf::OrderedMap<&'static str, StateComponent> = phf::phf_ordered_map! {
+pub(crate) static GROUP_COMPONENT_MASK_NAMES: phf::OrderedMap<
+    UniCase<&'static str>,
+    StateComponent,
+> = phf::phf_ordered_map! {
 
-        "base" => StateComponent::LAYOUT_DEPRESSED,
-        "latched" => StateComponent::LAYOUT_LATCHED,
-        "locked" => StateComponent::LAYOUT_LOCKED,
-        "effective" => StateComponent::LAYOUT_EFFECTIVE,
-        "any" => StateComponent::LAYOUT_EFFECTIVE,
-        "none" => StateComponent::empty(),
+        UniCase::ascii("base") => StateComponent::LAYOUT_DEPRESSED,
+        UniCase::ascii("latched") => StateComponent::LAYOUT_LATCHED,
+        UniCase::ascii("locked") => StateComponent::LAYOUT_LOCKED,
+        UniCase::ascii("effective") => StateComponent::LAYOUT_EFFECTIVE,
+        UniCase::ascii("any") => StateComponent::LAYOUT_EFFECTIVE,
+        UniCase::ascii("none") => StateComponent::empty(),
 
 };
 
@@ -218,47 +219,40 @@ pub(crate) static SYM_INTERPRET_MATCH_MASK_NAMES: phf::OrderedMap<
 impl Context {
     pub(crate) fn mod_index_text<'a>(&'a self, mods: &ModSet, ndx: ModIndex) -> &'a str {
         if ndx == XKB_MOD_INVALID {
-            return "none".into();
+            return "none";
         };
 
         if ndx == XKB_MOD_NONE {
-            return "None".into();
+            return "None";
         };
 
         let name = match mods.mods.get(ndx) {
             Some(m) => m.name,
-            None => return "".into(),
+            None => return "",
         };
 
-        self.xkb_atom_text(name).unwrap_or_else(|| "".into())
+        self.xkb_atom_text(name)
     }
 }
 impl ActionType {
     pub(crate) fn text(&self) -> String {
         let name = lookup_value(&ACTION_TYPE_NAMES, *self, false);
 
-        name.unwrap_or_else(|| "Private").into()
+        name.unwrap_or("Private").into()
     }
 }
 impl Context {
     pub(crate) fn keysym_text(&self, sym: &Keysym) -> String {
-        keysym_get_name(sym)
+        keysym_get_name(sym).unwrap_or("Invalid".into())
     }
 
     pub(crate) fn key_name_text(&self, name: Atom) -> String {
-        let name = match self.xkb_atom_text(name) {
-            Some(name) => name,
-            None => "",
-        };
-
-        let formatted_name = format!("<{}>", name);
-
-        formatted_name.into()
+        format!("<{}>", self.xkb_atom_text(name))
     }
 
     pub(crate) fn si_match_text(&self, _type: &MatchOperation) -> String {
         lookup_value(&SYM_INTERPRET_MATCH_MASK_NAMES, _type.clone(), false)
-            .unwrap_or_else(|| "")
+            .unwrap_or("")
             .into()
     }
     pub(crate) fn mod_mask_text(&self, mods: &ModSet, mask: ModMask) -> String {
@@ -277,7 +271,7 @@ impl Context {
             .enumerate()
             .filter(|(i, _mod)| (mask & (1 << i)) != 0)
             .map(|(_, _mod)| {
-                let text = self.xkb_atom_text(_mod.name).unwrap_or_else(|| "".into());
+                let text = self.xkb_atom_text(_mod.name);
 
                 text
             })
@@ -311,7 +305,7 @@ impl Context {
                     0 => "",
                     _ => "+",
                 },
-                lookup_value(&MOD_COMPONENT_MASK_NAMES, 1 << i, false).unwrap_or_else(|| "")
+                lookup_value(&MOD_COMPONENT_MASK_NAMES, 1 << i, false).unwrap_or("")
             );
 
             pos += s.len();
@@ -354,7 +348,7 @@ impl Context {
                     0 => "",
                     _ => "+",
                 },
-                lookup_value(&CTRL_MASK_NAMES, 1 << i, false).unwrap_or_else(|| "")
+                lookup_value(&CTRL_MASK_NAMES, 1 << i, false).unwrap_or("")
             );
 
             pos += s.len();

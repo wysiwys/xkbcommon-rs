@@ -1,7 +1,5 @@
 use crate::test::*;
 
-
-
 //const SHIFT_MASK: u32 = 1 << 0;
 const LOCK_MASK: u32 = 1 << 1;
 const CONTROL_MASK: u32 = 1 << 2;

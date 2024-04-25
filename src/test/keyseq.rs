@@ -2,7 +2,6 @@ use crate::log_init;
 use crate::rust_xkbcommon::*;
 use crate::test::*;
 
-
 use crate::keysyms::*;
 
 use evdev::Key;
@@ -513,15 +512,15 @@ fn keyseq() {
     test_key_seq(
         &keymap,
         vec![
-            (Key::KEY_H,        Both,   Keysym::h),
-            (Key::KEY_RIGHTALT, Down,   Keysym::Mode_switch),
-            (Key::KEY_H,        Both,   Keysym::hebrew_yod),
-            (Key::KEY_RIGHTALT, Up,     Keysym::ISO_Level3_Shift),
-            (Key::KEY_H,        Both,   Keysym::h),
-            (Key::KEY_RIGHTALT, Down,   Keysym::Mode_switch),
-            (Key::KEY_H,        Both,   Keysym::hebrew_yod),
-            (Key::KEY_RIGHTALT, Up,     Keysym::ISO_Level3_Shift),
-            (Key::KEY_H,        Both,   Keysym::h),
+            (Key::KEY_H, Both, Keysym::h),
+            (Key::KEY_RIGHTALT, Down, Keysym::Mode_switch),
+            (Key::KEY_H, Both, Keysym::hebrew_yod),
+            (Key::KEY_RIGHTALT, Up, Keysym::ISO_Level3_Shift),
+            (Key::KEY_H, Both, Keysym::h),
+            (Key::KEY_RIGHTALT, Down, Keysym::Mode_switch),
+            (Key::KEY_H, Both, Keysym::hebrew_yod),
+            (Key::KEY_RIGHTALT, Up, Keysym::ISO_Level3_Shift),
+            (Key::KEY_H, Both, Keysym::h),
         ],
     )
     .unwrap();
@@ -607,19 +606,19 @@ fn keyseq() {
         &keymap,
         vec![
             // Level 5
-            (Key::KEY_5,            Both,   Keysym::_5),
-            (Key::KEY_KP1,          Both,   Keysym::KP_1),
-            (Key::KEY_NUMLOCK,      Both,   Keysym::Clear),
-            (Key::KEY_LEFTSHIFT,    Down,   Keysym::Shift_L),
-            (Key::KEY_KP1,          Both,   Keysym::KP_1),
-            (Key::KEY_LEFTSHIFT,    Up,     Keysym::Shift_L),
-            (Key::KEY_CAPSLOCK,     Both,   Keysym::Caps_Lock),
-            (Key::KEY_KP1,          Both,   Keysym::KP_1),
-            (Key::KEY_LEFTSHIFT,    Down,   Keysym::Shift_L),
-            (Key::KEY_KP1,          Both,   Keysym::KP_1),
-            (Key::KEY_LEFTSHIFT,    Up,     Keysym::Shift_L),
-            (Key::KEY_CAPSLOCK,     Both,   Keysym::Caps_Lock),
-            (Key::KEY_A,            Both,   Keysym::a),
+            (Key::KEY_5, Both, Keysym::_5),
+            (Key::KEY_KP1, Both, Keysym::KP_1),
+            (Key::KEY_NUMLOCK, Both, Keysym::Clear),
+            (Key::KEY_LEFTSHIFT, Down, Keysym::Shift_L),
+            (Key::KEY_KP1, Both, Keysym::KP_1),
+            (Key::KEY_LEFTSHIFT, Up, Keysym::Shift_L),
+            (Key::KEY_CAPSLOCK, Both, Keysym::Caps_Lock),
+            (Key::KEY_KP1, Both, Keysym::KP_1),
+            (Key::KEY_LEFTSHIFT, Down, Keysym::Shift_L),
+            (Key::KEY_KP1, Both, Keysym::KP_1),
+            (Key::KEY_LEFTSHIFT, Up, Keysym::Shift_L),
+            (Key::KEY_CAPSLOCK, Both, Keysym::Caps_Lock),
+            (Key::KEY_A, Both, Keysym::a),
         ],
     )
     .unwrap();

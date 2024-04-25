@@ -4,8 +4,6 @@ use crate::test::*;
 use crate::context::Context;
 use crate::errors::*;
 
-
-
 // from filecomp.c
 fn test_file(ctx: Context, path_rel: &str) -> Result<Context, TestErr> {
     // return the context to reuse it
@@ -39,11 +37,17 @@ fn filecomp_test_files() {
     assert!(test_file(context.clone(), "keymaps/bad.xkb").is_err());
     assert!(test_file(context.clone(), "keymaps/syntax-error.xkb").is_err());
     assert!(test_file(context.clone(), "keymaps/syntax-error2.xkb").is_err());
+    assert!(test_file(context.clone(), "keymaps/empty-symbol-decl.xkb").is_err());
+    assert!(test_file(context.clone(), "keymaps/invalid-qualified-type-field.xkb").is_err());
+    assert!(test_file(
+        context.clone(),
+        "keymaps/invalid-qualified-symbols-field.xkb"
+    )
+    .is_err());
     assert!(test_file(context.clone(), "does not exist").is_err());
 
     // Test response to invalid flags and formats
     // TODO: pass a null file?
     // TODO: these tests would seemingly only work with a BufReader on stdin
-    // TODO: these tests would seemingly only work with a BufReader on stdin,
     // but the function currently takes a File.
 }

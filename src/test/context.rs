@@ -36,7 +36,6 @@ use crate::context::Context;
 use std::env;
 use std::path::*;
 
-
 struct Env {
     key: String,
     value: Option<String>,
@@ -265,10 +264,7 @@ fn test_context() {
 
     assert!(atom != 0);
 
-    assert_eq!(
-        context.xkb_atom_text(atom),
-        Some("HELLOjunkjunkjunk".into())
-    );
+    assert_eq!(context.atom_text(atom), Some("HELLOjunkjunkjunk".into()));
 
     let mut env = Environment { envs: vec![] };
     let mut dirs = Directories { dirs: vec![] };
