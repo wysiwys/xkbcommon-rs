@@ -35,16 +35,8 @@ pub XkbFiles: Vec<Result<XkbFile, AstError>> = {
 
 }
 XkbFile: Result<XkbFile,AstError> = {
-	<map:XkbCompositeMap> => {
-		//param.more_maps = map.is_ok();
-		//param.rtrn = map?; 
-		map},
-	<map:XkbMapConfig> => {
-		//param.more_maps = map.is_ok();
-		//param.rtrn = map?; 
-		map
-		//TODO: YYACCEPT
-		 },
+	<map:XkbCompositeMap> => map,
+	<map:XkbMapConfig> => map,
 }
 
 XkbCompositeMap: Result<XkbFile,AstError> = {
@@ -429,21 +421,17 @@ ExprList: Result<Vec<ExprDef>,AstError> = {
 
 }
 
-// TODO: not sure about precedence
-
 Expr: Result<ExprDef,AstError> = {
 	#[precedence(level="0")]
 	<t:Term> => t,
 	#[precedence(level="1")] #[assoc(side="left")]
 	<a:Expr> "/" <b:Expr> 
 		=> ExprBinary::create(ExprOpType::Divide,a?,b?),
-	#[precedence(level="2")] #[assoc(side="left")]
 	<a:Expr> "*" <b:Expr>
 		=> ExprBinary::create(ExprOpType::Multiply,a?,b?),
 	#[precedence(level="3")] #[assoc(side="left")]
 	<a:Expr> "+" <b:Expr>
 		=> ExprBinary::create(ExprOpType::Add,a?,b?),
-	#[precedence(level="4")] #[assoc(side="left")]
 	<a:Expr> "-" <b:Expr>
 		=> ExprBinary::create(ExprOpType::Subtract,a?,b?),
 	#[precedence(level="5")] #[assoc(side="right")]
@@ -564,10 +552,8 @@ Keysym: Option<Keysym> = {
 		use crate::keysyms::XKB_KEYSYM_MIN;
 		use crate::rust_xkbcommon::XKB_KEYSYM_MAX;
 
-		// TODO: number formatting in this function
-
 		if int < XKB_KEYSYM_MIN {
-			log::warn!("{:?}: Unrecognized keysym \"{}\"", 
+			log::warn!("{:?}: Unrecognized keysym \"{:#x}\"", 
 				XkbWarning::UnrecognizedKeysym, int); 
 			None
 		}
