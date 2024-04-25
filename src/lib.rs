@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! To set up the keymap/state on the Wayland client side:
-//! ```
+//! ```rust
 //! use rust_xkbcommon::*;
 //!
 //! let keymap = Keymap::new_from_string(
@@ -22,7 +22,7 @@
 //! To get syms and update the state on the client side:
 //!
 //!
-//! ```
+//! ```rust
 //! // Get syms before updating state
 //! let sym = state.key_get_one_sym(keycode)?;
 //!
@@ -211,6 +211,7 @@ pub mod xkb_state {
 pub use xkb_state::State;
 
 /// A number used to represent a physical key on a keyboard.
+///
 /// A standard PC-compatible keyboard might have 102 keys.
 /// An appropriate keymap would assign each of them a keycode,
 /// by which the user should refer to the key throughout the library.
@@ -252,6 +253,7 @@ lalrpop_mod!(pub(crate) parser);
 // keywords list generated in build.rs
 mod keywords;
 
+/// Re-export of [`xkeysym`]
 pub mod keysym {
     /// Re-export of [`xkeysym::NO_SYMBOL`]:
     pub use xkeysym::NO_SYMBOL;
