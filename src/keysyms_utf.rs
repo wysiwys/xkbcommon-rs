@@ -1,6 +1,5 @@
 use xkeysym::Keysym;
 
-
 /*
  * Copyright © 2012 Intel Corporation
  *
@@ -30,7 +29,7 @@ pub fn keysym_to_utf8(keysym: &Keysym) -> Option<Vec<u8>> {
     let mut buf = [0; 4];
 
     let c = keysym.key_char()?;
-    
+
     // TODO: is this correct?
     if c == '\0' {
         return None;
@@ -45,15 +44,13 @@ pub fn keysym_to_utf32(keysym: &Keysym) -> Option<u32> {
     if let Some(c) = keysym.key_char() {
         return Some(c as u32);
         /*
-    } else if (0x0100d800..=0x0100dfff).contains(&keysym.raw()) {
-        return None;
-    } else if (XKB_KEYSYM_UNICODE_OFFSET..=XKB_KEYSYM_UNICODE_MAX).contains(&keysym.raw()) {
+        } else if (0x0100d800..=0x0100dfff).contains(&keysym.raw()) {
+            return None;
+        } else if (XKB_KEYSYM_UNICODE_OFFSET..=XKB_KEYSYM_UNICODE_MAX).contains(&keysym.raw()) {
 
-        return Some(keysym.raw() - XKB_KEYSYM_UNICODE_OFFSET);
-        */
-
+            return Some(keysym.raw() - XKB_KEYSYM_UNICODE_OFFSET);
+            */
     }
-
 
     None
 }

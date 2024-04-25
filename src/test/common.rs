@@ -38,7 +38,7 @@ pub(crate) fn test_key_seq(
     // TODO: make the third tuple argument a list,
     // so can test for case with more than one sym
 
-    let mut state = State::new(keymap);
+    let mut state = State::new(keymap.clone());
     eprintln!("----");
 
     for (evdev_key, op, provided_keysym) in interactions {
@@ -146,7 +146,7 @@ pub(crate) fn test_read_file(path_rel: &str) -> Option<String> {
 
 pub(crate) fn test_get_context(
     test_flags: TestContextFlags,
-) -> Result<Context, IncludePathAppendError> {
+) -> Result<Context, context::IncludePathAppendError> {
     use std::env;
 
     let mut ctx_flags = ContextFlags::NO_DEFAULT_INCLUDES;

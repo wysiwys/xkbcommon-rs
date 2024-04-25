@@ -6,54 +6,58 @@ use crate::keymap::*;
 use crate::keysyms::*;
 use crate::rust_xkbcommon::*;
 
-use thiserror::Error;
+pub(crate) mod errors {
+    use super::*;
+    use thiserror::Error;
 
-#[derive(Debug, Error, PartialEq)]
-pub enum ModIndexIsConsumedError {
-    #[error("The provided mod index does not exist: {0}")]
-    NoSuchModIndex(usize),
+    #[derive(Debug, Error, PartialEq)]
+    pub enum ModIndexIsConsumedError {
+        #[error("The provided mod index does not exist: {0}")]
+        NoSuchModIndex(usize),
 
-    #[error("The keycode {0:?} does not correspond to a key in the State")]
-    NoSuchKeyAtKeycode(Keycode),
+        #[error("The keycode {0:?} does not correspond to a key in the State")]
+        NoSuchKeyAtKeycode(Keycode),
+    }
+
+    #[derive(Debug, Error)]
+    pub enum LedIsActiveError {
+        #[error("The provided LED index does not exist: {0}")]
+        NoSuchLedIndex(usize),
+
+        #[error("The provided LED name does not exist: {0}")]
+        NoSuchLedName(String),
+    }
+
+    #[derive(Debug, Error)]
+    pub enum LayoutIsActiveError {
+        #[error("The provided layout index does not exist: {0}")]
+        NoSuchLayoutIndex(usize),
+
+        #[error("The provided layout name does not exist: {0}")]
+        NoSuchLayoutName(String),
+    }
+
+    #[derive(Debug, Error)]
+    pub enum ModIsActiveError {
+        #[error("The provided mod index does not exist: {0}")]
+        NoSuchModIndex(usize),
+
+        #[error("The provided mod name does not exist: {0}")]
+        NoSuchModName(String),
+    }
+
+    #[derive(PartialEq, Debug, Clone)]
+    pub(super) enum InternalStateError {
+        NoSuchFilter,
+        CannotCreateFilterFromActionType(ActionType),
+        WrongActionType,
+        CannotInitializeNullFilter,
+        CannotApplyNullFilter,
+        WrongFilterData,
+        NoSuchKey,
+    }
 }
-
-#[derive(Debug, Error)]
-pub enum LedIsActiveError {
-    #[error("The provided LED index does not exist: {0}")]
-    NoSuchLedIndex(usize),
-
-    #[error("The provided LED name does not exist: {0}")]
-    NoSuchLedName(String),
-}
-
-#[derive(Debug, Error)]
-pub enum LayoutIsActiveError {
-    #[error("The provided layout index does not exist: {0}")]
-    NoSuchLayoutIndex(usize),
-
-    #[error("The provided layout name does not exist: {0}")]
-    NoSuchLayoutName(String),
-}
-
-#[derive(Debug, Error)]
-pub enum ModIsActiveError {
-    #[error("The provided mod index does not exist: {0}")]
-    NoSuchModIndex(usize),
-
-    #[error("The provided mod name does not exist: {0}")]
-    NoSuchModName(String),
-}
-
-#[derive(PartialEq, Debug, Clone)]
-enum InternalStateError {
-    NoSuchFilter,
-    CannotCreateFilterFromActionType(ActionType),
-    WrongActionType,
-    CannotInitializeNullFilter,
-    CannotApplyNullFilter,
-    WrongFilterData,
-    NoSuchKey,
-}
+use errors::*;
 
 impl Filter {
     fn new(action: Action, key: RawKeycode) -> Result<Self, InternalStateError> {
@@ -919,11 +923,11 @@ impl State {
     /// from a provided keymap.
     ///
     ///Corresponds to `xkb_state_new`
-    pub fn new(keymap: &Keymap) -> Self {
+    pub fn new(keymap: Keymap) -> Self {
         // calloc'ed in the original
         // TODO: keep keymap as reference?
         Self {
-            keymap: keymap.clone(),
+            keymap,
             components: Default::default(),
             filters: Filters { filters: vec![] },
             set_mods: 0,
@@ -1227,7 +1231,7 @@ impl State {
     }
 
     fn should_do_caps_transformation(&self, kc: RawKeycode) -> bool {
-        let caps = match self.keymap.mod_get_index(XKB_MOD_NAME_CAPS) {
+        let caps = match self.keymap.mod_get_index(ModName::CAPS.name()) {
             Some(caps) => caps,
             None => return false,
         };
@@ -1241,7 +1245,7 @@ impl State {
     }
 
     fn should_do_ctrl_transformation(&self, kc: RawKeycode) -> bool {
-        let ctrl = match self.keymap.mod_get_index(XKB_MOD_NAME_CTRL) {
+        let ctrl = match self.keymap.mod_get_index(ModName::CTRL.name()) {
             Some(ctrl) => ctrl,
             None => return false,
         };
@@ -1404,7 +1408,7 @@ impl State {
     ///
     pub fn key_get_utf32(&self, kc: Keycode) -> Option<u32> {
         let sym = self.get_one_sym_for_string(kc.raw())?;
-        let mut cp: u32 = crate::keysyms_utf::keysym_to_utf32(&sym)?.into();
+        let mut cp: u32 = crate::keysyms_utf::keysym_to_utf32(&sym)?;
 
         if self.should_do_ctrl_transformation(kc.raw()) {
             if let Ok(c) = u8::try_from(cp) {

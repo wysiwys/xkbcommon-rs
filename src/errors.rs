@@ -4,9 +4,21 @@
 pub(crate) use crate::message_codes::*;
 use crate::rust_xkbcommon::*;
 
+pub mod context {
+
+    pub use crate::context::errors::*;
+}
+pub mod state {
+    pub use crate::state::errors::*;
+}
+
+pub mod keymap {
+
+    pub use super::KeymapCompileError;
+}
+
 use thiserror::Error;
 
-pub use crate::context::ContextError;
 use crate::parser_utils::XkbFileParseError;
 use std::path::PathBuf;
 
@@ -364,6 +376,9 @@ impl From<ProcessIncludeError> for CompileCompatError {
 
 #[derive(Clone, Debug, Error)]
 pub(crate) enum CompileCompatError {
+    #[error("Could not resolve mod mask")]
+    CouldNotResolveModMask,
+
     #[error("Could not resolve lhs")]
     CouldNotResolveLhs,
 
@@ -567,7 +582,7 @@ pub enum KeymapCompileError {
     NoComponentsReturned(PathBuf),
 
     #[error("Matcher error: {0:?}")]
-    MatcherError(MatcherError),
+    MatcherError(String),
 
     #[error("Cannot compile a {0:?} file alone into a keymap")]
     OnlyPartialKeymap(XkbFileType),
@@ -595,7 +610,7 @@ pub enum KeymapCompileError {
 }
 
 #[derive(Debug, Error)]
-pub enum MatcherError {
+pub(crate) enum MatcherError {
     #[error("Wrong encoding provided for path {0:?}")]
     WrongEncoding(PathBuf),
 
@@ -662,8 +677,7 @@ impl From<RulesCompileError> for KeymapCompileError {
         use RulesCompileError::*;
         match r {
             NoComponentsReturned(p) => Self::NoComponentsReturned(p),
-            // TODO: embed instead of wrapping
-            MatcherError(e) => Self::MatcherError(e),
+            MatcherError(e) => Self::MatcherError(e.to_string()),
         }
     }
 }

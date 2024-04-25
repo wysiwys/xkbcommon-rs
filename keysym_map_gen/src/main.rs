@@ -89,7 +89,6 @@ use xkeysym::Keysym;
 "
     )?;
 
-
     // we're looking for lines of the following form:
     // #define {some prefix}XK_{some key name} {some key code}
     // the keycode may be wrapped in _EVDEVK(*), wchich means we have to
@@ -173,70 +172,49 @@ use xkeysym::Keysym;
                     &symbol
                 );
 
-                let keysym_str = format!(
-                    "{}{}",
-                    prefix,
-                    &symbol
-                );
+                let keysym_str = format!("{}{}", prefix, &symbol);
 
                 return Some((hex_value, keysym_str, keysym_name));
-
             }
 
             None
-        }).collect::<Vec<_>>();
+        })
+        .collect::<Vec<_>>();
 
-    
     let mut name_to_keysym_icase = data.clone();
-    name_to_keysym_icase.sort_by(|a,b| {
-
+    name_to_keysym_icase.sort_by(|a, b| {
         let a_lower = a.1.to_lowercase();
         let b_lower = b.1.to_lowercase();
 
-        let a_is_xf86 = a.1.starts_with("XF86");
-        let b_is_xf86 = b.1.starts_with("XF86");
-
-        /*
-        if a_is_xf86 && !b_is_xf86 {
-
-            std::cmp::Ordering::Greater
-        } else if !a_is_xf86 && b_is_xf86 {
-            std::cmp::Ordering::Less
-        }
-        */
-        if a_lower < b_lower {
-            std::cmp::Ordering::Less
-        } else if a_lower > b_lower {
-            std::cmp::Ordering::Greater
-        } else {
-            a.1.partial_cmp(&b.1).unwrap()
+        match (a_lower, b_lower) {
+            (p, q) if p < q => std::cmp::Ordering::Less,
+            (p, q) if p > q => std::cmp::Ordering::Greater,
+            _ => a.1.partial_cmp(&b.1).unwrap(),
         }
     });
 
-
     // sort data by hex value
     // TODO: ensure this sorts by raw keysym ascending
-    data.sort_by(|a,b| a.0.partial_cmp(&b.0).unwrap());
+    data.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
 
     // The phf_map
-    let mut keysym_dump = format!("
+    let mut keysym_dump = format!(
+        "
 use phf::phf_ordered_map;
 #[allow(unreachable_patterns)]
-pub(crate) static KEYSYM_TO_NAME: [(Keysym, &'static str); {}] = [
+pub(crate) static KEYSYM_TO_NAME: [(Keysym, &str); {}] = [
         (xkeysym::NO_SYMBOL, \"NoSymbol\"),\n",
         data.len() + 1
-        );
-    data.iter()
-        .for_each(|(hex_value, keysym_str, keysym_name)| {
-            // Write a match entry for it.
-            writeln!(
-                keysym_dump,
-                "        (Keysym::{}, \"{}\"),",
-                &keysym_name, &keysym_str
-            )
-            .unwrap();
-
-        });
+    );
+    data.iter().for_each(|(_, keysym_str, keysym_name)| {
+        // Write a match entry for it.
+        writeln!(
+            keysym_dump,
+            "        (Keysym::{}, \"{}\"),",
+            &keysym_name, &keysym_str
+        )
+        .unwrap();
+    });
     // Write out the keysym dump.
     keysym_dump.push_str(
         "
@@ -248,8 +226,9 @@ pub(crate) static KEYSYM_TO_NAME: [(Keysym, &'static str); {}] = [
 pub(crate) static NAME_TO_KEYSYM: phf::OrderedMap<&'static str, Keysym> = phf_ordered_map! {
         \"NoSymbol\" => Keysym::NoSymbol,\n"
         .to_string();
-    
-    name_to_keysym_icase.iter()
+
+    name_to_keysym_icase
+        .iter()
         .for_each(|(_, keysym_str, keysym_name)| {
             // Write a match entry for it.
             writeln!(
@@ -258,7 +237,6 @@ pub(crate) static NAME_TO_KEYSYM: phf::OrderedMap<&'static str, Keysym> = phf_or
                 &keysym_str, &keysym_name
             )
             .unwrap();
-
         });
     // Write out the keysym dump.
     name_to_keysym.push_str(
@@ -266,9 +244,7 @@ pub(crate) static NAME_TO_KEYSYM: phf::OrderedMap<&'static str, Keysym> = phf_or
 };",
     );
 
-
     writeln!(outfile, "{name_to_keysym}\n{keysym_dump}",)?;
 
     Ok(())
 }
-

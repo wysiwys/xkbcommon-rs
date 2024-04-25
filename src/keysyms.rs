@@ -5,26 +5,28 @@ use crate::rust_xkbcommon::*;
 
 use crate::keysyms_generated_phf::{KEYSYM_TO_NAME, NAME_TO_KEYSYM};
 
-pub const XKB_KEYSYM_MIN: u32 = 0;
-pub const XKB_KEYSYM_MIN_ASSIGNED: u32 = 0;
-pub const XKB_KEYSYM_MAX_ASSIGNED: u32 = 0x1008ffb8;
-pub const XKB_KEYSYM_MIN_EXPLICIT: u32 = 0;
-pub const XKB_KEYSYM_MAX_EXPLICIT: u32 = 0x1008ffb8;
-pub const XKB_KEYSYM_COUNT_EXPLICIT: usize = 2446;
-pub const XKB_KEYSYM_UNICODE_OFFSET: u32 = 0x01000000;
-pub const XKB_KEYSYM_UNICODE_MIN: u32 = 0x01000100;
-pub const XKB_KEYSYM_UNICODE_MAX: u32 = 0x0110ffff;
-pub const XKB_KEYSYM_NAME_MAX_SIZE: usize = 27;
+#[allow(dead_code)]
+mod constants {
+    pub const XKB_KEYSYM_MIN: u32 = 0;
+    pub const XKB_KEYSYM_MIN_ASSIGNED: u32 = 0;
+    pub const XKB_KEYSYM_MAX_ASSIGNED: u32 = 0x1008ffb8;
+    pub const XKB_KEYSYM_MIN_EXPLICIT: u32 = 0;
+    pub const XKB_KEYSYM_MAX_EXPLICIT: u32 = 0x1008ffb8;
+    pub const XKB_KEYSYM_COUNT_EXPLICIT: usize = 2446;
+    pub const XKB_KEYSYM_UNICODE_OFFSET: u32 = 0x01000000;
+    pub const XKB_KEYSYM_UNICODE_MIN: u32 = 0x01000100;
+    pub const XKB_KEYSYM_UNICODE_MAX: u32 = 0x0110ffff;
+    pub const XKB_KEYSYM_NAME_MAX_SIZE: usize = 27;
+}
+
+pub use constants::*;
 
 fn find_keysym_name(ks: &Keysym) -> Option<&'static str> {
     if ks.raw() > XKB_KEYSYM_MAX_EXPLICIT {
         return None;
     }
-    
-    let found_idx = KEYSYM_TO_NAME.binary_search_by_key(
-        ks,
-        |&(a,_)| a,
-        ).ok()?;
+
+    let found_idx = KEYSYM_TO_NAME.binary_search_by_key(ks, |&(a, _)| a).ok()?;
 
     let found_sym = KEYSYM_TO_NAME[found_idx].0.raw();
     let mut found_name = KEYSYM_TO_NAME[found_idx].1;
@@ -32,14 +34,15 @@ fn find_keysym_name(ks: &Keysym) -> Option<&'static str> {
     // Get the first sym that matches
     let mut try_idx = match found_idx {
         0 => return Some(found_name),
-        idx => idx - 1 };
+        idx => idx - 1,
+    };
 
     while KEYSYM_TO_NAME[try_idx].0.raw() == found_sym {
         found_name = KEYSYM_TO_NAME[try_idx].1;
         try_idx = match try_idx {
             0 => return Some(found_name),
-            idx => idx - 1 };
-        
+            idx => idx - 1,
+        };
     }
     Some(found_name)
 }
@@ -51,7 +54,6 @@ pub(crate) fn get_unicode_name(ks: u32) -> String {
 }
 
 pub fn keysym_get_name(ks: &Keysym) -> Option<String> {
-
     if let Some(sym) = find_keysym_name(ks) {
         return Some(sym.into());
     }
@@ -81,7 +83,6 @@ pub(crate) fn keysym_is_assigned(ks: &Keysym) -> bool {
 pub(crate) struct KeysymIterator {
     explicit: bool,       // If true, traverse only explicitly named keysyms
     index: Option<usize>, // Current index in keysym_to_name
-    // TODO: make this Option<usize>
     keysym: RawKeysym,
 }
 
@@ -94,12 +95,6 @@ impl KeysymIterator {
             keysym: XKB_KEYSYM_UNICODE_MAX,
         }
     }
-
-    // TODO: delete me
-    fn get_keysym(&self) -> RawKeysym {
-        self.keysym
-    }
-
 
     /*
     pub(crate) fn is_explicitly_named(&self) -> bool {
@@ -146,7 +141,7 @@ impl KeysymIterator {
             || self
                 .index
                 .and_then(|i| KEYSYM_TO_NAME.get(i + 1))
-                .map(|(sym,_ )| sym.raw() < XKB_KEYSYM_UNICODE_MIN)
+                .map(|(sym, _)| sym.raw() < XKB_KEYSYM_UNICODE_MIN)
                 .unwrap_or(false)
         {
             // explicitly named keysyms only
@@ -157,15 +152,14 @@ impl KeysymIterator {
                 self.index = Some(0);
             }
             self.keysym = KEYSYM_TO_NAME.get(self.index.unwrap()).unwrap().0.raw();
-           
-            
+
             assert!(
                 self.explicit
                     || self.keysym <= XKB_KEYSYM_UNICODE_MIN
-                    || self.keysym >= XKB_KEYSYM_UNICODE_MAX, 
-                    "{:?}", Keysym::from(self.keysym)
+                    || self.keysym >= XKB_KEYSYM_UNICODE_MAX,
+                "{:?}",
+                Keysym::from(self.keysym)
             );
-            
         } else {
             // Unicode keysyms
             // NOTE: Unicode keysyms are within keysym_to_name keysyms range.
@@ -182,7 +176,7 @@ impl KeysymIterator {
             }
         }
 
-        Some(self.get_keysym())
+        Some(self.keysym)
     }
 }
 fn parse_keysym_hex(s: &str) -> Option<u32> {
@@ -191,7 +185,6 @@ fn parse_keysym_hex(s: &str) -> Option<u32> {
     let mut chars = s.chars();
     for _ in 0..8 {
         if let Some(c) = chars.next() {
-
             // TODO: is this needed?
             if c == '\0' {
                 break;
@@ -236,7 +229,6 @@ where
             return Some(*sym);
         }
     } else {
-
         // TODO: clean this up
         let mut entry = None;
         let name_lower = name.to_lowercase();
@@ -247,33 +239,40 @@ where
 
         while hi >= lo {
             let mid = (lo + hi) / 2;
-            let (mid_name_lower, sym) = NAME_TO_KEYSYM.index(mid)
-                .map(|(name,sym)| (name.to_lowercase(),sym.raw())).unwrap();
-            
-            if name_lower > mid_name_lower  {
-                lo = mid + 1;
-            } else if name_lower < mid_name_lower {
-                hi = match mid {
-                    0 => break,
-                    mid => mid - 1 };
-            } else {
-                entry = Some((mid, sym));
-                break;
+            let (mid_name_lower, sym) = NAME_TO_KEYSYM
+                .index(mid)
+                .map(|(name, sym)| (name.to_lowercase(), sym.raw()))
+                .unwrap();
 
+            match (&name_lower, &mid_name_lower) {
+                (a, b) if a > b => lo = mid + 1,
+                (a, b) if a < b => {
+                    hi = match mid {
+                        0 => break,
+                        mid => mid - 1,
+                    }
+                }
+                _ => {
+                    entry = Some((mid, sym));
+                    break;
+                }
             }
         }
         if let Some((ref mut idx, ref mut entry)) = entry {
             // Keep going until we reach end of array or non case-insensitive match
-            while *idx < NAME_TO_KEYSYM.len() &&
-                    NAME_TO_KEYSYM.index(*idx).map(|(name, _)| name.to_lowercase()) == NAME_TO_KEYSYM.index(*idx + 1).map(|(name, _)| name.to_lowercase()) {
-                    *idx += 1;
-                    *entry = NAME_TO_KEYSYM.index(*idx).unwrap().1.raw();
-                }
+            while *idx < NAME_TO_KEYSYM.len()
+                && NAME_TO_KEYSYM
+                    .index(*idx)
+                    .map(|(name, _)| name.to_lowercase())
+                    == NAME_TO_KEYSYM
+                        .index(*idx + 1)
+                        .map(|(name, _)| name.to_lowercase())
+            {
+                *idx += 1;
+                *entry = NAME_TO_KEYSYM.index(*idx).unwrap().1.raw();
+            }
             return Some(Keysym::from(*entry));
-
-
         }
-
     }
 
     let mut chars = name.chars();
@@ -310,7 +309,9 @@ where
     // the former has no separating underscore,
     // while soem XF86* syms in the latter did.
 
-    if name.starts_with("XF86_") || (icase && name.len() >= 5 && name[0..5].to_lowercase() == "XF86_".to_lowercase()) {
+    if name.starts_with("XF86_")
+        || (icase && name.len() >= 5 && name[0..5].to_lowercase() == "XF86_".to_lowercase())
+    {
         if name.is_empty() {
             return None;
         }

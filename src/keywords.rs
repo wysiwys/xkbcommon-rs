@@ -1,8 +1,8 @@
 use crate::lexer::Token;
 
-        use unicase::*;
+use unicase::*;
 
-        pub(crate) static KEYWORDS: phf::OrderedMap<UniCase<&'static str>, Token> = ::phf::OrderedMap {
+pub(crate) static KEYWORDS: phf::OrderedMap<UniCase<&'static str>, Token> = ::phf::OrderedMap {
     key: 7485420634051515786,
     disps: &[
         (5, 33),
@@ -16,51 +16,8 @@ use crate::lexer::Token;
         (2, 28),
     ],
     idxs: &[
-        13,
-        32,
-        37,
-        7,
-        29,
-        4,
-        6,
-        11,
-        39,
-        25,
-        18,
-        28,
-        19,
-        20,
-        0,
-        27,
-        41,
-        30,
-        21,
-        26,
-        31,
-        9,
-        33,
-        5,
-        24,
-        38,
-        15,
-        36,
-        17,
-        14,
-        42,
-        1,
-        12,
-        3,
-        40,
-        22,
-        35,
-        2,
-        10,
-        8,
-        43,
-        16,
-        34,
-        44,
-        23,
+        13, 32, 37, 7, 29, 4, 6, 11, 39, 25, 18, 28, 19, 20, 0, 27, 41, 30, 21, 26, 31, 9, 33, 5,
+        24, 38, 15, 36, 17, 14, 42, 1, 12, 3, 40, 22, 35, 2, 10, 8, 43, 16, 34, 44, 23,
     ],
     entries: &[
         (UniCase::ascii("action"), Token::ActionTok),
@@ -109,6 +66,4 @@ use crate::lexer::Token;
         (UniCase::ascii("xkb_symbols"), Token::XkbSymbols),
         (UniCase::ascii("xkb_types"), Token::XkbTypes),
     ],
-}
-;
-
+};

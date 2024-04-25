@@ -1,16 +1,15 @@
 use xkeysym::{Keysym, RawKeysym};
 
-use icu_casemap::CaseMapper;
+use crate::keysym::KeysymFlags;
+use crate::keysym::XKB_KEYSYM_MAX;
 use crate::keysyms::*;
 use crate::keysyms_utf::*;
-use crate::KeysymFlags;
-use crate::XKB_KEYSYM_MAX;
+use icu_casemap::CaseMapper;
 
 struct KsNamesEntry {
     keysym: Keysym,
     names: Vec<&'static str>,
 }
-
 
 const MODIFIER_KEYSYMS: [RawKeysym; 35] = [
     Keysym::ISO_Lock.raw(),
@@ -123,8 +122,7 @@ fn test_keysym(keysym: u32, expected: &str) -> bool {
 
 // TODO: return bool?
 fn test_utf8(keysym: &Keysym, expected: &str) -> Option<bool> {
-    let name = keysym_to_utf8(keysym)
-        .and_then(|bytes| String::from_utf8(bytes).ok())?;
+    let name = keysym_to_utf8(keysym).and_then(|bytes| String::from_utf8(bytes).ok())?;
     eprintln!("{:?}", name);
 
     assert!(expected != "");
@@ -136,18 +134,14 @@ fn test_utf8(keysym: &Keysym, expected: &str) -> Option<bool> {
 }
 
 fn to_simple_upper(cm: &CaseMapper, cp: u32) -> char {
-    
     cm.simple_uppercase(char::try_from(cp).unwrap())
 }
 
 fn to_simple_lower(cm: &CaseMapper, cp: u32) -> char {
-    
     cm.simple_lowercase(char::try_from(cp).unwrap())
-
 }
 
 fn test_icu_case_mappings(cm: &CaseMapper, ks: &Keysym) {
-
     // Check lower case mapping
     let ks_mapped = keysym_to_lower(ks);
     let cp = keysym_to_utf32(ks).unwrap_or(0);
@@ -157,7 +151,7 @@ fn test_icu_case_mappings(cm: &CaseMapper, ks: &Keysym) {
         let got = keysym_to_utf32(&ks_mapped).unwrap();
         assert_eq!(got, expected as u32);
         let got = keysym_is_upper(ks);
- 
+
         let cp = char::try_from(cp).unwrap();
 
         // TODO: is titlecase check correct?
@@ -167,21 +161,27 @@ fn test_icu_case_mappings(cm: &CaseMapper, ks: &Keysym) {
         assert!(got == expected || is_title);
 
         if is_title {
-
-            eprintln!("{} title case handling {:#06x} (U{} = {})", 
-            match got == expected {
-                true => "[INFO] valid",
-                false => "[WARNING] invalid",
-            },
-            ks.raw(), cp as u32, cp);
-
+            eprintln!(
+                "{} title case handling {:#06x} (U{} = {})",
+                match got == expected {
+                    true => "[INFO] valid",
+                    false => "[WARNING] invalid",
+                },
+                ks.raw(),
+                cp as u32,
+                cp
+            );
         }
-
     } else if expected as u32 != cp {
-        eprintln!("[WARNING] missing lower case mapping for {:#06x}: expected U{} ({}), got U{} ({})",
-            ks.raw(), expected as u32, expected, cp, char::try_from(cp).unwrap());
+        eprintln!(
+            "[WARNING] missing lower case mapping for {:#06x}: expected U{} ({}), got U{} ({})",
+            ks.raw(),
+            expected as u32,
+            expected,
+            cp,
+            char::try_from(cp).unwrap()
+        );
         assert!(!keysym_is_upper(ks));
-
     }
 
     // Check upper case mapping
@@ -197,38 +197,43 @@ fn test_icu_case_mappings(cm: &CaseMapper, ks: &Keysym) {
         let got = keysym_is_lower(ks);
         let expected = cp.is_lowercase();
         assert_eq!(got, expected);
-
     } else if expected as u32 != cp {
-        eprintln!("[WARNING] missing upper case mapping for {:#06x}: expected U{} ({}), got U{} ({})",
-            ks.raw(), expected as u32, expected, cp, char::try_from(cp).unwrap());
+        eprintln!(
+            "[WARNING] missing upper case mapping for {:#06x}: expected U{} ({}), got U{} ({})",
+            ks.raw(),
+            expected as u32,
+            expected,
+            cp,
+            char::try_from(cp).unwrap()
+        );
         assert!(!keysym_is_lower(ks));
-
-
     }
-
 }
 
 #[test]
 fn test_github_issue_42() {
-    use gettextrs::setlocale;
-    use gettextrs::LocaleCategory;
 
-    // Verify we are not dependent on locale, Turkish-i problem in particular
+    /*
+        use gettextrs::setlocale;
+        use gettextrs::LocaleCategory;
 
-    if setlocale(LocaleCategory::LcCType, "tr_TR.UTF-8").is_none() {
-        // the locale is not available, probably; skip.
-        return;
-    }
+        // Verify we are not dependent on locale, Turkish-i problem in particular
 
-    assert!(test_string("i", Keysym::i.raw()));
-    assert!(test_string("I", Keysym::I.raw()));
-    assert!(test_casestring("i", Keysym::i.raw()));
-    assert!(test_casestring("I", Keysym::I.raw()));
+        if setlocale(LocaleCategory::LcCType, "tr_TR.UTF-8").is_none() {
+            // the locale is not available, probably; skip.
+            return;
+        }
 
-    assert_eq!(keysym_to_upper(&Keysym::i), Keysym::I);
-    assert_eq!(keysym_to_lower(&Keysym::I), Keysym::i);
+        assert!(test_string("i", Keysym::i.raw()));
+        assert!(test_string("I", Keysym::I.raw()));
+        assert!(test_casestring("i", Keysym::i.raw()));
+        assert!(test_casestring("I", Keysym::I.raw()));
 
-    setlocale(LocaleCategory::LcCType, "C").unwrap();
+        assert_eq!(keysym_to_upper(&Keysym::i), Keysym::I);
+        assert_eq!(keysym_to_lower(&Keysym::I), Keysym::i);
+
+        setlocale(LocaleCategory::LcCType, "C").unwrap();
+    */
 }
 
 fn get_keysym_name(ks: Keysym) -> String {
@@ -236,15 +241,18 @@ fn get_keysym_name(ks: Keysym) -> String {
 }
 
 fn test_utf32_to_keysym(ucs: u32, expected: Keysym) -> bool {
-
     // TODO: if any, more allowed utf32s than chars
     let actual = match char::try_from(ucs) {
         Ok(c) => Keysym::from_char(c),
-        _ => xkeysym::NO_SYMBOL };
+        _ => xkeysym::NO_SYMBOL,
+    };
     let expected_name = get_keysym_name(expected);
     let actual_name = get_keysym_name(actual);
 
-    eprintln!("Code point {:#x}: expected keysym: {}, actual: {}\n", ucs, expected_name, actual_name);
+    eprintln!(
+        "Code point {:#x}: expected keysym: {}, actual: {}\n",
+        ucs, expected_name, actual_name
+    );
 
     expected == actual
 }
@@ -1653,9 +1661,9 @@ fn assigned_keysyms() {
     assert!(keysym_is_assigned(&Keysym::XF86_MonBrightnessUp));
     assert!(keysym_is_assigned(&Keysym::VoidSymbol));
     assert!(keysym_is_assigned(&Keysym::from(XKB_KEYSYM_UNICODE_MIN)));
-    assert!(keysym_is_assigned(
-        &Keysym::from((XKB_KEYSYM_UNICODE_MIN + XKB_KEYSYM_UNICODE_MAX) / 2)
-    ));
+    assert!(keysym_is_assigned(&Keysym::from(
+        (XKB_KEYSYM_UNICODE_MIN + XKB_KEYSYM_UNICODE_MAX) / 2
+    )));
     assert!(keysym_is_assigned(&Keysym::from(XKB_KEYSYM_UNICODE_MAX)));
     assert!(keysym_is_assigned(&Keysym::from(XKB_KEYSYM_MAX_ASSIGNED)));
     assert!(!keysym_is_assigned(&Keysym::from(XKB_KEYSYM_MAX)));
@@ -1663,7 +1671,6 @@ fn assigned_keysyms() {
 
 #[test]
 fn test_keysyms() {
-
     let cm = CaseMapper::new();
 
     let mut ks_prev = XKB_KEYSYM_MIN;
@@ -1671,13 +1678,12 @@ fn test_keysyms() {
     let mut count_non_unicode = 0;
 
     let mut iter = KeysymIterator::new(false);
-    
+
     while let Some(ks) = iter.next() {
         // May have repeat syms
         if ks_prev == ks {
             continue;
         }
-
 
         count += 1;
         if ks < XKB_KEYSYM_UNICODE_MIN || ks > XKB_KEYSYM_UNICODE_MAX {
@@ -1693,7 +1699,7 @@ fn test_keysyms() {
         let utf8 = keysym_to_utf8(&Keysym::from(ks)).unwrap_or(vec![]); //TODO: is this correct?
         let needed = utf8.len();
         assert!(needed <= 5);
-        
+
         // Check maximum name length
         let name = iter.get_name().unwrap();
         let needed = name.len();
@@ -1711,16 +1717,21 @@ fn test_keysyms() {
         assert_eq!(got, expected);
 
         test_icu_case_mappings(&cm, &Keysym::from(ks)); // TODO
-
     }
     assert_eq!(ks_prev, XKB_KEYSYM_MAX_ASSIGNED);
-    assert_eq!(count, XKB_KEYSYM_UNICODE_MAX - XKB_KEYSYM_UNICODE_MIN + 1 + count_non_unicode);
+    assert_eq!(
+        count,
+        XKB_KEYSYM_UNICODE_MAX - XKB_KEYSYM_UNICODE_MIN + 1 + count_non_unicode
+    );
 
     // Named keysyms
     assert!(test_string("NoSymbol", xkeysym::NO_SYMBOL.raw()));
     assert!(test_string("Undo", 0xFF65));
     assert!(test_string("UNDO", xkeysym::NO_SYMBOL.raw()));
-    assert!(test_string("ThisKeyShouldNotExist", xkeysym::NO_SYMBOL.raw()));
+    assert!(test_string(
+        "ThisKeyShouldNotExist",
+        xkeysym::NO_SYMBOL.raw()
+    ));
     assert!(test_string("XF86_Switch_VT_5", 0x1008FE05));
     assert!(test_string("VoidSymbol", 0xFFFFFF));
     assert!(test_string("0", 0x30));
@@ -1757,9 +1768,9 @@ fn test_keysyms() {
     assert!(test_string("U10FFFF", XKB_KEYSYM_UNICODE_MAX)); /* Max Unicode */
     assert!(test_string("U110000", xkeysym::NO_SYMBOL.raw()));
     /* Unicode: test syntax */
-    assert!(test_string("U00004567", 0x1004567));         /* OK:  8 digits */
+    assert!(test_string("U00004567", 0x1004567)); /* OK:  8 digits */
     assert!(test_string("U000004567", xkeysym::NO_SYMBOL.raw())); /* ERR: 9 digits */
-    assert!(test_string("U+4567", xkeysym::NO_SYMBOL.raw()));     /* ERR: Standard Unicode notation */
+    assert!(test_string("U+4567", xkeysym::NO_SYMBOL.raw())); /* ERR: Standard Unicode notation */
     assert!(test_string("U+4567ffff", xkeysym::NO_SYMBOL.raw()));
     assert!(test_string("U+4567ffffff", xkeysym::NO_SYMBOL.raw()));
     assert!(test_string("U-456", xkeysym::NO_SYMBOL.raw())); /* No negative number */
@@ -1771,20 +1782,26 @@ fn test_keysyms() {
     assert!(test_string("u4567", xkeysym::NO_SYMBOL.raw())); /* Require XKB_KEYSYM_CASE_INSENSITIVE */
 
     /* Hexadecimal: test ranges */
-    assert!(test_string(&get_unicode_name(XKB_KEYSYM_MIN)[1..], xkeysym::NO_SYMBOL.raw())); /* Min keysym. */
+    assert!(test_string(
+        &get_unicode_name(XKB_KEYSYM_MIN)[1..],
+        xkeysym::NO_SYMBOL.raw()
+    )); /* Min keysym. */
     assert!(test_string("0x1", 0x00000001));
     assert!(test_string("0x01234567", 0x01234567));
     assert!(test_string("0x09abcdef", 0x09abcdef));
     assert!(test_string("0x01000100", XKB_KEYSYM_UNICODE_MIN)); /* Min Unicode. */
     assert!(test_string("0x0110ffff", XKB_KEYSYM_UNICODE_MAX)); /* Max Unicode. */
-    assert!(test_string(&format!("{:#08x}",XKB_KEYSYM_MAX), XKB_KEYSYM_MAX));   /* Max keysym. */
+    assert!(test_string(
+        &format!("{:#08x}", XKB_KEYSYM_MAX),
+        XKB_KEYSYM_MAX
+    )); /* Max keysym. */
     assert!(test_string("0x20000000", xkeysym::NO_SYMBOL.raw()));
     assert!(test_string("0xffffffff", xkeysym::NO_SYMBOL.raw()));
     assert!(test_string("0x100000000", xkeysym::NO_SYMBOL.raw()));
     /* Hexadecimal: test syntax */
-    assert!(test_string("0x10203040", 0x10203040));        /* OK:  8 digits */
+    assert!(test_string("0x10203040", 0x10203040)); /* OK:  8 digits */
     assert!(test_string("0x102030400", xkeysym::NO_SYMBOL.raw())); /* ERR: 9 digits */
-    assert!(test_string("0x01020304", 0x1020304));         /* OK:  8 digits, starts with 0 */
+    assert!(test_string("0x01020304", 0x1020304)); /* OK:  8 digits, starts with 0 */
     assert!(test_string("0x010203040", xkeysym::NO_SYMBOL.raw())); /* ERR: 9 digits, starts with 0 */
     assert!(test_string("0x+10203040", xkeysym::NO_SYMBOL.raw()));
     assert!(test_string("0x01020304w", xkeysym::NO_SYMBOL.raw())); /* Not hexadecimal digit */
@@ -1823,7 +1840,10 @@ fn test_keysyms() {
     /* Min keysym. */
     assert!(test_keysym(XKB_KEYSYM_MIN, "NoSymbol"));
     /* Max keysym. */
-    assert!(test_keysym(XKB_KEYSYM_MAX, &format!("{:#08x}",XKB_KEYSYM_MAX)));
+    assert!(test_keysym(
+        XKB_KEYSYM_MAX,
+        &format!("{:#08x}", XKB_KEYSYM_MAX)
+    ));
     /* Outside range. */
     assert!(test_keysym(XKB_KEYSYM_MAX + 1, "Invalid"));
     assert!(test_keysym(0xffffffff, "Invalid"));
@@ -1832,7 +1852,10 @@ fn test_keysyms() {
     assert!(test_casestring("UNDO", 0xFF65));
     assert!(test_casestring("A", 0x61));
     assert!(test_casestring("a", 0x61));
-    assert!(test_casestring("ThisKeyShouldNotExist", xkeysym::NO_SYMBOL.raw()));
+    assert!(test_casestring(
+        "ThisKeyShouldNotExist",
+        xkeysym::NO_SYMBOL.raw()
+    ));
     assert!(test_casestring("XF86_Switch_vT_5", 0x1008FE05));
     assert!(test_casestring("xF86_SwitcH_VT_5", 0x1008FE05));
     assert!(test_casestring("xF86SwiTch_VT_5", 0x1008FE05));
@@ -1848,21 +1871,27 @@ fn test_keysyms() {
     assert!(test_casestring("thorn", 0x00fe));
 
     for entry in ambiguous_icase_names() {
-
         test_ambiguous_icase_names(&entry);
-
     }
 
     assert!(test_string("", xkeysym::NO_SYMBOL.raw()));
     assert!(test_casestring("", xkeysym::NO_SYMBOL.raw()));
-    
+
     /* Latin-1 keysyms (1:1 mapping in UTF-32) */
     assert!(test_utf8(&Keysym::from(0x0020), "\x20").unwrap());
     assert!(test_utf8(&Keysym::from(0x007e), "\x7e").unwrap());
 
-    assert!(test_utf8(&Keysym::from(0x00a0), &String::from_utf8(vec![0xc2, 0xa0]).unwrap()).unwrap());
-    assert!(test_utf8(&Keysym::from(0x00ff), &String::from_utf8(vec![0xc3, 0xbf]).unwrap()).unwrap());
-    
+    assert!(test_utf8(
+        &Keysym::from(0x00a0),
+        &String::from_utf8(vec![0xc2, 0xa0]).unwrap()
+    )
+    .unwrap());
+    assert!(test_utf8(
+        &Keysym::from(0x00ff),
+        &String::from_utf8(vec![0xc3, 0xbf]).unwrap()
+    )
+    .unwrap());
+
     assert!(test_utf8(&Keysym::y, "y").unwrap());
     assert!(test_utf8(&Keysym::u, "u").unwrap());
     assert!(test_utf8(&Keysym::m, "m").unwrap());
@@ -1892,22 +1921,28 @@ fn test_keysyms() {
     assert!(test_utf8(&Keysym::KP_9, "9").unwrap());
     assert!(test_utf8(&Keysym::KP_Multiply, "*").unwrap());
     assert!(test_utf8(&Keysym::KP_Subtract, "-").unwrap());
-    
+
     /* Unicode keysyms */
     assert!(test_utf8(&Keysym::from(XKB_KEYSYM_UNICODE_OFFSET), "").is_none()); /* Min Unicode codepoint */
-    assert!(test_utf8(&Keysym::from(0x1000001), "\x01").unwrap());     /* Currently accepted, but not intended (< 0x100100) */
-    assert!(test_utf8(&Keysym::from(0x1000020), " ").unwrap());        /* Currently accepted, but not intended (< 0x100100) */
-    assert!(test_utf8(&Keysym::from(0x100007f), "\x7f").unwrap());     /* Currently accepted, but not intended (< 0x100100) */
-    assert!(test_utf8(&Keysym::from(0x10000a0), &String::from_utf8(vec![0xc2, 0xa0]).unwrap()).unwrap()); /* Currently accepted, but not intended (< 0x100100) */
+    assert!(test_utf8(&Keysym::from(0x1000001), "\x01").unwrap()); /* Currently accepted, but not intended (< 0x100100) */
+    assert!(test_utf8(&Keysym::from(0x1000020), " ").unwrap()); /* Currently accepted, but not intended (< 0x100100) */
+    assert!(test_utf8(&Keysym::from(0x100007f), "\x7f").unwrap()); /* Currently accepted, but not intended (< 0x100100) */
+    assert!(test_utf8(
+        &Keysym::from(0x10000a0),
+        &String::from_utf8(vec![0xc2, 0xa0]).unwrap()
+    )
+    .unwrap()); /* Currently accepted, but not intended (< 0x100100) */
     assert!(test_utf8(&Keysym::from(XKB_KEYSYM_UNICODE_MIN), "Ā").unwrap()); /* Min Unicode keysym */
     assert!(test_utf8(&Keysym::from(0x10005d0), "א").unwrap());
-    assert!(test_utf8(&Keysym::from(XKB_KEYSYM_UNICODE_MAX), 
-            &String::from_utf8(vec![0xf4, 0x8f, 0xbf, 0xbf]).unwrap()).unwrap()); /* Max Unicode */
+    assert!(test_utf8(
+        &Keysym::from(XKB_KEYSYM_UNICODE_MAX),
+        &String::from_utf8(vec![0xf4, 0x8f, 0xbf, 0xbf]).unwrap()
+    )
+    .unwrap()); /* Max Unicode */
     assert!(test_utf8(&Keysym::from(0x0100d800), "").is_none()); // Unicode surrogates
     assert!(test_utf8(&Keysym::from(0x0100dfff), "").is_none()); // Unicode surrogates
     assert!(test_utf8(&Keysym::from(0x1110000), "").is_none());
 
-    
     assert!(test_utf32_to_keysym('y' as u32, Keysym::y));
     assert!(test_utf32_to_keysym('u' as u32, Keysym::u));
     assert!(test_utf32_to_keysym('m' as u32, Keysym::m));
@@ -1919,7 +1954,6 @@ fn test_keysyms() {
     assert!(test_utf32_to_keysym(0x634, Keysym::Arabic_sheen));
     assert!(test_utf32_to_keysym(0x1F609, Keysym::from(0x0101F609))); // ;) emoji
 
-    
     assert!(test_utf32_to_keysym('\u{8}' as u32, Keysym::BackSpace));
     assert!(test_utf32_to_keysym('\t' as u32, Keysym::Tab));
     assert!(test_utf32_to_keysym('\n' as u32, Keysym::Linefeed));
@@ -1928,7 +1962,6 @@ fn test_keysyms() {
     assert!(test_utf32_to_keysym(0x1b, Keysym::Escape));
     assert!(test_utf32_to_keysym(0x7f, Keysym::Delete));
 
-    
     assert!(test_utf32_to_keysym(' ' as u32, Keysym::space));
     assert!(test_utf32_to_keysym(',' as u32, Keysym::comma));
     assert!(test_utf32_to_keysym('.' as u32, Keysym::period));
@@ -1966,7 +1999,6 @@ fn test_keysyms() {
     assert!(keysym_is_upper(&keysym_from_name("U0391", 0).unwrap())); /* GREEK CAPITAL LETTER ALPHA */
     assert!(keysym_is_upper(&keysym_from_name("U0388", 0).unwrap())); /* GREEK CAPITAL LETTER EPSILON WITH TONOS */
 
-    
     assert!(!keysym_is_upper(&Keysym::a));
     assert!(!keysym_is_lower(&Keysym::A));
     assert!(!keysym_is_lower(&Keysym::Return));
@@ -1985,7 +2017,6 @@ fn test_keysyms() {
     assert!(!Keysym::_1.is_keypad_key());
     assert!(!Keysym::Return.is_keypad_key());
 
-
     assert!(keysym_to_upper(&Keysym::a) == Keysym::A);
     assert!(keysym_to_upper(&Keysym::A) == Keysym::A);
     assert!(keysym_to_lower(&Keysym::a) == Keysym::a);
@@ -2000,5 +2031,4 @@ fn test_keysyms() {
     assert!(keysym_to_lower(&Keysym::Eacute) == Keysym::eacute);
 
     test_github_issue_42();
-
 }

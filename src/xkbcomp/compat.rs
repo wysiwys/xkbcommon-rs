@@ -310,7 +310,7 @@ impl CompatInfo {
 
         match expr.resolve_mod_mask(ctx, ModType::REAL, &self.mods) {
             Some(mod_mask) => Ok((pred, mod_mask)),
-            None => Err(todo!()),
+            None => Err(CompileCompatError::CouldNotResolveModMask),
         }
     }
 }
@@ -534,6 +534,7 @@ impl CompatInfo {
 }
 
 impl SymInterpInfo {
+    #[allow(clippy::too_many_arguments)]
     fn set_interp_field(
         &mut self,
         ctx: &Context,

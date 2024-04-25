@@ -9,34 +9,31 @@ use crate::errors::*;
 use crate::rust_xkbcommon::{ContextFlags, RuleNames};
 use crate::utils::*;
 
-use thiserror::Error;
+pub mod errors {
+    use thiserror::Error;
 
-#[derive(Debug, Error)]
-pub enum IncludePathResetDefaultsError {
-    #[error("Default include paths could not be appended, but previous paths were cleared")]
-    AllDefaultsFailed,
+    #[derive(Debug, Error)]
+    pub enum IncludePathResetDefaultsError {
+        #[error("Default include paths could not be appended, but previous paths were cleared")]
+        AllDefaultsFailed,
+    }
+
+    #[derive(Debug, Error)]
+    pub enum IncludePathAppendError {
+        #[error("The provided directory was not found: {path}")]
+        DirectoryNotFound { path: String, error: std::io::Error },
+
+        #[error("The provided file is not a directory: {0}")]
+        IsNotDirectory(String),
+
+        #[error("Do not have R_OK | X_OK eacces for {0}")]
+        NoEaccesForFile(String),
+
+        #[error("All default includes failed")]
+        AllDefaultsFailed,
+    }
 }
-
-#[derive(Debug, Error)]
-pub enum IncludePathAppendError {
-    #[error("The provided directory was not found: {path}")]
-    DirectoryNotFound { path: String, error: std::io::Error },
-
-    #[error("The provided file is not a directory: {0}")]
-    IsNotDirectory(String),
-
-    #[error("Do not have R_OK | X_OK eacces for {0}")]
-    NoEaccesForFile(String),
-
-    #[error("All default includes failed")]
-    AllDefaultsFailed,
-}
-
-#[derive(Debug)]
-pub enum ContextError {
-    Nix(nix::Error),
-    Std(std::io::Error),
-}
+use errors::*;
 
 #[derive(Clone)]
 pub struct Context {
@@ -65,7 +62,7 @@ pub struct Context {
 #[allow(dead_code)]
 impl Context {
     /// Create a new context
-    pub fn new<T>(flags: T) -> Result<Self, ContextError>
+    pub fn new<T>(flags: T) -> Result<Self, Box<dyn std::error::Error>>
     where
         T: Into<ContextFlags>,
     {
