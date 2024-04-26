@@ -40,15 +40,17 @@ pub(crate) enum RulesToken {
     #[regex("//[^\n]*[\n\r]?", |_| logos::Skip, priority=4)]
     Comment,
 
-    // TODO: check is_graph + other requirement
-    #[regex(r"\$[A-Za-z0-9_\,\.\:\+\-\(\)!@#\$%&\?\^\*`\~\[\]\/{\}\|]+", |lex| lex.slice().parse().ok().map(|s: String| s[1..].to_owned()), priority=3)]
+    // is_graph and != \\
+    #[regex(r"\$[\x21-\x5B\x5D-\x7E]+", 
+        |lex| lex.slice().parse().ok().map(|s: String| s[1..].to_owned()), priority=3)]
     GroupName(String),
 
-    #[token("include")]
+    #[token("include", priority = 2)]
     Include,
 
-    // TODO: check is_graph + other requirement
-    #[regex(r"[A-Za-z0-9_\,\.\+/\:\-\(\)!@#\$%&\?\^\*`\~\[\]\{\}\|]+", |lex| lex.slice().parse().ok(), priority=2)]
+    // is_graph and != \\
+    #[regex(r"[\x21-\x5B\x5D-\x7E]+", 
+        |lex| lex.slice().parse().ok(), priority=1)]
     Identifier(String),
 }
 

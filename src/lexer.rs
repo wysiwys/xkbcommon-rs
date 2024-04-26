@@ -66,8 +66,9 @@ enum RawToken {
     #[regex(r"[[//]#][^\n]*[\n\r]?", |_| logos::Skip, priority=5)]
     Comment,
 
-    // TODO: isgraph() characters
-    #[regex(r"<[A-Za-z0-9\,\._\+=\-\(\)!@#\$%&\?\^\*`\~\[\]\{\}\|]*>", 
+    // <is_graph*> but not <>
+    // TODO: remove \x3B (semicolon)?
+    #[regex(r"<[\x21-\x3B\x3D\x3F-\x7E]*>", 
         |lex| lex.slice().parse().ok().map(remove_brackets), priority=4)]
     Keyname(String),
 
