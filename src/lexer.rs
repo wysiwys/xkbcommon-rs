@@ -67,7 +67,6 @@ enum RawToken {
     Comment,
 
     // <is_graph*> but not <>
-    // TODO: remove \x3B (semicolon)?
     #[regex(r"<[\x21-\x3B\x3D\x3F-\x7E]*>", 
         |lex| lex.slice().parse().ok().map(remove_brackets), priority=4)]
     Keyname(String),
@@ -267,25 +266,51 @@ fn process_string(token: String) -> String {
     // octal digits (0-7)
     while let Some(c) = chars.next() {
         if c == '\\' {
-            let backslash = c;
-
+            let mut octal = String::new();
             for i in 0..3 {
                 if let Some(c) = chars.next() {
                     if ('0'..='7').contains(&c) {
-                        // octal digit; skip
-                        continue;
+                        octal.push(c);
+                        if i < 2 {
+                            continue;
+                        } else {
+                            // add if valid ascii character
+                            if let Ok(c) = u8::from_str_radix(&octal, 8) {
+                                string.push(c as char);
+                                break;
+                            }
+                        }
                     } else if i == 0 {
-                        // TODO: does this work?
-                        if ['n', 't', 'r', 'b', 'f', 'v'].contains(&c) {
-                            // approved escape
-                            string.push(backslash);
-                            string.push(c);
-                            break;
-                        } else if i == 0 && c == 'e' {
-                            // TODO: is this correct?
-                            // octal \033 escape => \x1b
-                            string += "\x1b";
-                            break;
+                        match c {
+                            'n' => {
+                                string += "\n";
+                                break;
+                            }
+                            't' => {
+                                string += "\t";
+                                break;
+                            }
+                            'r' => {
+                                string += "\r";
+                                break;
+                            }
+                            'b' => {
+                                string += "\\";
+                                break;
+                            } // backslash
+                            'f' => {
+                                string += "\x0c";
+                                break;
+                            } // form feed page break
+                            'v' => {
+                                string += "\x0b";
+                                break;
+                            }
+                            'e' => {
+                                string += "\x1b";
+                                break;
+                            } // octal \033
+                            _ => {}
                         }
                     } else {
                         // TODO: warn unknown escape seq?
