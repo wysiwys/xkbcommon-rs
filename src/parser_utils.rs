@@ -106,7 +106,7 @@ impl XkbFile {
     // part from scanner.c
     pub(crate) fn parse_string(
         ctx: &mut Context,
-        string: String,
+        string: &str,
         file_name: &str,
         map: Option<&str>,
     ) -> Result<Option<XkbFile>, XkbFileParseError> {
@@ -186,6 +186,6 @@ impl XkbFile {
             });
         }
 
-        Self::parse_string(ctx, string, file_name, map)
+        Self::parse_string(ctx, &string, file_name, map)
     }
 }

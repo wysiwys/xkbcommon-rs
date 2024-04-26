@@ -823,7 +823,7 @@ impl Keymap {
     /// one enormous string.
     pub fn new_from_string<T, F>(
         context: Context,
-        string: String,
+        string: &str,
         format: T,
         flags_raw: F,
     ) -> Result<Self, KeymapCompileError>

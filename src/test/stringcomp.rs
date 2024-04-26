@@ -80,11 +80,11 @@ fn stringcomp() {
     let dump = original2;
 
     // Test response to invalid formats and flags
-    assert!(Keymap::new_from_string(keymap.context.clone(), dump.clone(), 0, 0).is_err());
-    assert!(Keymap::new_from_string(keymap.context.clone(), dump.clone(), 42, 0).is_err());
-    assert!(Keymap::new_from_string(keymap.context.clone(), dump.clone(), 2, 0).is_err());
+    assert!(Keymap::new_from_string(keymap.context.clone(), &dump, 0, 0).is_err());
+    assert!(Keymap::new_from_string(keymap.context.clone(), &dump, 42, 0).is_err());
+    assert!(Keymap::new_from_string(keymap.context.clone(), &dump, 2, 0).is_err());
     assert!(
-        Keymap::new_from_string(keymap.context.clone(), dump, KeymapFormat::TextV1, 42).is_err()
+        Keymap::new_from_string(keymap.context.clone(), &dump, KeymapFormat::TextV1, 42).is_err()
     );
     assert!(keymap.get_as_string(0).is_err());
     assert!(keymap.get_as_string(4893).is_err());

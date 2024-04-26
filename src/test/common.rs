@@ -196,7 +196,7 @@ pub(crate) fn test_compile_file(context: Context, path: &str) -> Result<Keymap, 
 pub(crate) fn test_compile_string(context: Context, string: String) -> Option<Keymap> {
     // TODO: don't pass in context this way
 
-    let keymap = Keymap::new_from_string(context, string, KeymapFormat::TextV1, 0);
+    let keymap = Keymap::new_from_string(context, &string, KeymapFormat::TextV1, 0);
 
     if keymap.is_err() {
         eprintln!("Failed to compile string");

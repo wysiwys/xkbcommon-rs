@@ -199,7 +199,7 @@ impl KeymapBuilder<TextV1> {
 
     pub(crate) fn keymap_new_from_string(
         mut self,
-        string: String,
+        string: &str,
     ) -> Result<Keymap, KeymapCompileError> {
         let xkb_file = XkbFile::parse_string(&mut self.context, string, "(input string)", None)
             .map_err(|error| KeymapCompileError::CouldNotParseString { error })?;
