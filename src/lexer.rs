@@ -62,6 +62,11 @@ impl<'input> Iterator for Lexer<'input> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
+        // A bit hacky: `next` does not return an element if an XkbFile block is detected to have
+        // ended. This is done here because lalrpop currently (does not seem to) support parsing
+        // only part of the lexer's tokens, and then leaving off. However, we need to do this in
+        // order to parse e.g. only the first of several XkbFiles in a file.
+
         if self.finished_block {
             return None;
         }
@@ -70,10 +75,18 @@ impl<'input> Iterator for Lexer<'input> {
             .map(|(raw_token, _span)| match raw_token {
                 Ok(raw_token) => {
                     let token = Token::from(raw_token);
+
+                    // Detect whether a block has ended.
+                    // When the bracket_depth is lowered to 0 and followed by a semicolon,
+                    // the block has ended.
+                    // TODO: should the struct also track whether an Obrace preceded the last
+                    // Cbrace?
                     if token == Token::Obrace {
                         self.bracket_depth += 1;
                     } else if token == Token::Cbrace {
-                        self.bracket_depth -= 1;
+                        if self.bracket_depth > 0 {
+                            self.bracket_depth -= 1;
+                        }
                         if self.bracket_depth == 0 {
                             self.closed_last_bracket = true;
                         }
