@@ -7,7 +7,7 @@ use crate::errors::*;
 use crate::keysyms::keysym_from_name;
 use crate::xkbcomp::ast::*;
 
-use crate::parser::XkbFilesParser;
+use crate::parser::XkbFileParser;
 
 use xkeysym::Keysym;
 
@@ -112,7 +112,7 @@ impl XkbFile {
     ) -> Result<Option<XkbFile>, XkbFileParseError> {
         let mut parser_param = ParserParam { ctx };
 
-        let lexer = crate::lexer::Lexer::new(&string)
+        let mut lexer = crate::lexer::Lexer::new(string)
             .map_err(|e| {
 
                 log::error!("This could be a file encoding issue. Supported encodings must be backward compatible with ASCII.");
@@ -120,7 +120,7 @@ impl XkbFile {
                 e
             })?;
 
-        let parser = XkbFilesParser::new();
+        let parser = XkbFileParser::new();
 
         // If we got a specific map, we look for it exclusively
         // and return immediately upon finding it.
@@ -131,13 +131,14 @@ impl XkbFile {
 
         let mut first_file = None;
 
-        // TODO: this currently skips error'ed files. Is this correct behavior?
-        let files = parser
-            .parse(&mut parser_param, lexer)?
-            .into_iter()
-            .flatten();
+        while !lexer.is_empty() {
+            lexer.reset();
 
-        for xkb_file in files {
+            let xkb_file = match parser.parse(&mut parser_param, &mut lexer)? {
+                Ok(file) => file,
+                Err(_) => continue,
+            };
+
             if let Some(map) = map {
                 if xkb_file.name == map {
                     return Ok(Some(xkb_file));

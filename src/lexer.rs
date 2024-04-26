@@ -1,6 +1,6 @@
-use logos::Logos;
-
 use crate::parser_utils::XkbFileParseError;
+use logos::Logos;
+use std::iter::Peekable;
 
 //below fn is part of scanner-utils.c
 pub(crate) fn check_supported_char_encoding(s: &str) -> Result<&str, ()> {
@@ -31,7 +31,10 @@ pub(crate) fn check_supported_char_encoding(s: &str) -> Result<&str, ()> {
 
 // TODO: return the span/location information
 pub(crate) struct Lexer<'input> {
-    token_stream: logos::SpannedIter<'input, RawToken<'input>>,
+    bracket_depth: usize,
+    closed_last_bracket: bool,
+    finished_block: bool,
+    token_stream: Peekable<logos::SpannedIter<'input, RawToken<'input>>>,
 }
 
 impl<'input> Lexer<'input> {
@@ -39,8 +42,19 @@ impl<'input> Lexer<'input> {
         let input = check_supported_char_encoding(input)
             .map_err(|_| XkbFileParseError::WrongInputFormat)?;
         Ok(Self {
-            token_stream: RawToken::lexer(input).spanned(),
+            bracket_depth: 0,
+            closed_last_bracket: false,
+            finished_block: false,
+            token_stream: RawToken::lexer(input).spanned().peekable(),
         })
+    }
+    pub(crate) fn is_empty(&mut self) -> bool {
+        self.token_stream.peek().is_none()
+    }
+    pub(crate) fn reset(&mut self) {
+        self.bracket_depth = 0;
+        self.closed_last_bracket = false;
+        self.finished_block = false;
     }
 }
 
@@ -48,10 +62,27 @@ impl<'input> Iterator for Lexer<'input> {
     type Item = Token;
 
     fn next(&mut self) -> Option<Self::Item> {
+        if self.finished_block {
+            return None;
+        }
         self.token_stream
             .next()
             .map(|(raw_token, _span)| match raw_token {
-                Ok(raw_token) => Some(Token::from(raw_token)),
+                Ok(raw_token) => {
+                    let token = Token::from(raw_token);
+                    if token == Token::Obrace {
+                        self.bracket_depth += 1;
+                    } else if token == Token::Cbrace {
+                        self.bracket_depth -= 1;
+                        if self.bracket_depth == 0 {
+                            self.closed_last_bracket = true;
+                        }
+                    } else if self.closed_last_bracket && token == Token::Semi {
+                        self.finished_block = true;
+                    }
+
+                    Some(token)
+                }
                 Err(_) => None,
             })?
     }

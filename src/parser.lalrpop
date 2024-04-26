@@ -29,12 +29,7 @@ CommaPlus<T>: Vec<T> = {
 	}
 }
 	
-
-pub XkbFiles: Vec<Result<XkbFile, AstError>> = {
-	<files:XkbFile+> => files
-
-}
-XkbFile: Result<XkbFile,AstError> = {
+pub XkbFile: Result<XkbFile,AstError> = {
 	<map:XkbCompositeMap> => map,
 	<map:XkbMapConfig> => map,
 }
