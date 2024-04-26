@@ -557,7 +557,7 @@ impl KeyTypesInfo {
         &mut self,
         ctx: &Context,
         _type: &mut KeyTypeInfo,
-        field: String,
+        field: &str,
         array_ndx: Option<ExprDef>,
         value: ExprDef,
     ) -> Result<(), CompileTypesError> {
@@ -591,7 +591,7 @@ impl KeyTypesInfo {
                 );
 
                 type_field = TypeField::empty();
-                Err(CompileTypesError::UnknownField(field))
+                Err(CompileTypesError::UnknownField(field.to_owned()))
             }
         };
 
@@ -633,7 +633,7 @@ impl KeyTypesInfo {
 
                     continue;
                 }
-                ok = self.set_keytype_field(ctx, _type, ret.field, ret.index, def.value);
+                ok = self.set_keytype_field(ctx, _type, &ret.field, ret.index, def.value);
             }
         }
 

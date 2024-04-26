@@ -57,15 +57,15 @@ use logos::Logos;
 
 const INCLUDE_MAX_DEPTH: u32 = 15;
 
-struct IncludeStmtPartBuilder {
-    file: Option<String>,
+struct IncludeStmtPartBuilder<'input> {
+    file: Option<&'input str>,
     merge: MergeMode,
-    map: Option<String>,      // should be an option
-    modifier: Option<String>, // should be option
+    map: Option<&'input str>,      // should be an option
+    modifier: Option<&'input str>, // should be option
     invalid: bool,
 }
 
-impl IncludeStmtPartBuilder {
+impl IncludeStmtPartBuilder<'_> {
     fn new(merge: MergeMode) -> Self {
         Self {
             merge,
@@ -83,9 +83,12 @@ impl IncludeStmtPartBuilder {
 
         Ok(IncludeStmtPart {
             merge: self.merge,
-            file: self.file.ok_or(ParseIncludeMapError::MapWithoutFile)?,
-            map: self.map,
-            modifier: self.modifier,
+            file: self
+                .file
+                .ok_or(ParseIncludeMapError::MapWithoutFile)?
+                .to_owned(),
+            map: self.map.map(|s| s.to_owned()),
+            modifier: self.modifier.map(|s| s.to_owned()),
         })
     }
 }
@@ -93,24 +96,24 @@ impl IncludeStmtPartBuilder {
 // TODO: determine whether A-Za-z0-9 is correct here
 #[derive(Logos, Debug)]
 #[logos(error = &'static str)]
-enum IncludeStatementToken {
-    #[regex(r"[\+\|]", |lex| lex.slice().parse().ok().map(|s: String| match s.as_str() {
+enum IncludeStatementToken<'input> {
+    #[regex(r"[\+\|]", |lex| match lex.slice() {
         "|" => MergeMode::Augment, _ => MergeMode::Override,
-    }), priority=1)]
+    }, priority=1)]
     Merge(MergeMode),
 
-    #[regex(r"\([^\+\|\(\)\:]+\)", |lex| lex.slice().parse().ok().map(|s: String| s[1..s.len()-1].into()), priority = 5)]
-    Map(String),
+    #[regex(r"\([^\+\|\(\)\:]+\)", |lex| &lex.slice()[1..lex.slice().len()-1], priority = 5)]
+    Map(&'input str),
 
-    #[regex(r"\:[^\+\|\(\)]+", |lex| lex.slice().parse().ok().map(|s: String| s[1..].into()), priority = 4)]
-    ExtraData(String),
+    #[regex(r"\:[^\+\|\(\)]+", |lex| &lex.slice()[1..], priority = 4)]
+    ExtraData(&'input str),
 
-    #[regex(r"[^\+\|\(\)\:]+", |lex| lex.slice().parse().ok(), priority = 3)]
-    File(String),
+    #[regex(r"[^\+\|\(\)\:]+", |lex| lex.slice(), priority = 3)]
+    File(&'input str),
 }
 
-fn parse_single_include(
-    lexer: &mut std::iter::Peekable<logos::Lexer<IncludeStatementToken>>,
+fn parse_single_include<'t>(
+    lexer: &mut std::iter::Peekable<logos::Lexer<'t, IncludeStatementToken<'t>>>,
     merge_default: MergeMode,
 ) -> Option<Result<IncludeStmtPart, ParseIncludeMapError>> {
     use IncludeStatementToken::*;

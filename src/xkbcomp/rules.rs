@@ -18,7 +18,7 @@ const MAX_INCLUDE_DEPTH: usize = 5;
 
 #[derive(Logos, Debug, PartialEq)]
 #[logos(error = &'static str)]
-pub(crate) enum RulesToken {
+pub(crate) enum RulesToken<'input> {
     #[token("!", priority = 3)]
     Bang,
 
@@ -42,16 +42,16 @@ pub(crate) enum RulesToken {
 
     // is_graph and != \\
     #[regex(r"\$[\x21-\x5B\x5D-\x7E]+", 
-        |lex| lex.slice().parse().ok().map(|s: String| s[1..].to_owned()), priority=3)]
-    GroupName(String),
+        |lex| &lex.slice()[1..], priority=3)]
+    GroupName(&'input str),
 
     #[token("include", priority = 2)]
     Include,
 
     // is_graph and != \\
     #[regex(r"[\x21-\x5B\x5D-\x7E]+", 
-        |lex| lex.slice().parse().ok(), priority=1)]
-    Identifier(String),
+        |lex| lex.slice(), priority=1)]
+    Identifier(&'input str),
 }
 
 #[derive(Default, Clone, Debug, PartialEq)]
@@ -62,7 +62,7 @@ enum IncludeTokenLexingError {
 
 #[derive(Logos, Debug, PartialEq)]
 #[logos(error = IncludeTokenLexingError)]
-enum IncludeToken {
+enum IncludeToken<'input> {
     #[token("%%", priority = 3)]
     DoublePercent,
 
@@ -74,11 +74,11 @@ enum IncludeToken {
 
     #[token("%E", priority = 3)]
     E,
-    #[regex(r"%[.]", |lex| lex.slice().to_string(), priority=2)]
-    UnknownFormat(String),
+    #[regex(r"%[.]", |lex| lex.slice(), priority=2)]
+    UnknownFormat(&'input str),
 
-    #[regex("[^%]+", |lex| lex.slice().to_string(), priority=1)]
-    OtherText(String),
+    #[regex("[^%]+", |lex| lex.slice(), priority=1)]
+    OtherText(&'input str),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, strum_macros::EnumCount, strum_macros::EnumIter)]
@@ -134,17 +134,17 @@ impl RulesKccgst {
 }
 
 #[derive(Clone, Debug)]
-struct MatchedSval {
-    sval: String, // TODO: in original, was pointer to a slice in the input
+struct MatchedSval<'input> {
+    sval: &'input str, // TODO: in original, was pointer to a slice in the input
     matched: bool,
 }
 
 // A broken-down version of xkb_rule_names (without the rules, obviously)
-struct MatcherRuleNames {
-    model: MatchedSval,
-    layouts: Vec<MatchedSval>,
-    variants: Vec<MatchedSval>,
-    options: Vec<MatchedSval>,
+struct MatcherRuleNames<'input> {
+    model: MatchedSval<'input>,
+    layouts: Vec<MatchedSval<'input>>,
+    variants: Vec<MatchedSval<'input>>,
+    options: Vec<MatchedSval<'input>>,
 }
 
 struct Group {
@@ -205,10 +205,11 @@ impl Default for Rule {
     }
 }
 
+// TODO: use ranges instead of slices where possible
 struct Matcher<'c> {
     ctx: &'c Context,
 
-    rmlvo: MatcherRuleNames,
+    rmlvo: MatcherRuleNames<'c>,
     groups: Vec<Group>,
     kccgst: BTreeMap<RulesKccgst, String>,
 
@@ -220,19 +221,19 @@ struct Matcher<'c> {
 }
 
 impl<'c> Matcher<'c> {
-    fn new(ctx: &'c Context, rmlvo: &RuleNames) -> Self {
+    fn new(ctx: &'c Context, rmlvo: &'c RuleNames) -> Self {
         // TODO: don't clone the string content,
         // if possible
 
         // TODO: is this correct?
         let model = MatchedSval {
-            sval: rmlvo.model.clone().unwrap_or_else(|| "".into()),
+            sval: rmlvo.model.as_deref().unwrap_or(""),
             matched: false,
         };
         let rmlvo = MatcherRuleNames {
-            layouts: split_comma_separated_mlvo(rmlvo.layout.as_ref()),
-            variants: split_comma_separated_mlvo(rmlvo.variant.as_ref()),
-            options: split_comma_separated_mlvo(rmlvo.options.as_ref()),
+            layouts: split_comma_separated_mlvo(rmlvo.layout.as_deref()),
+            variants: split_comma_separated_mlvo(rmlvo.variant.as_deref()),
+            options: split_comma_separated_mlvo(rmlvo.options.as_deref()),
             model,
         };
         Self {
@@ -246,27 +247,27 @@ impl<'c> Matcher<'c> {
         }
     }
 
-    fn group_start_new(&mut self, name: String) {
+    fn group_start_new(&mut self, name: &str) {
         let group = Group {
-            name,
+            name: name.to_owned(),
             elements: vec![],
         };
 
         self.groups.push(group);
     }
 
-    fn group_add_element(&mut self, element: String) -> Result<(), MatcherError> {
+    fn group_add_element(&mut self, element: &str) -> Result<(), MatcherError> {
         let group = self.groups.iter_mut().last();
 
         match group {
-            Some(group) => group.elements.push(element),
+            Some(group) => group.elements.push(element.to_owned()),
             None => return Err(MatcherError::NoGroupAvailable),
         }
 
         Ok(())
     }
 
-    fn include(&mut self, include_depth: usize, inc: String) -> Result<(), MatcherError> {
+    fn include(&mut self, include_depth: usize, inc: &str) -> Result<(), MatcherError> {
         // parse the include value
         // This needs a separate lexer
 
@@ -282,7 +283,7 @@ impl<'c> Matcher<'c> {
         // and checks in the loop
         let mut buf = String::new();
 
-        for token in IncludeToken::lexer(&inc) {
+        for token in IncludeToken::lexer(inc) {
             use IncludeToken::*;
             match token.expect("Lexer failed on token") {
                 DoublePercent => buf += "%",
@@ -308,9 +309,9 @@ impl<'c> Matcher<'c> {
                     buf += "/rules";
                 }
                 UnknownFormat(f) => {
-                    return Err(MatcherError::UnknownFormatInIncludeStmt(f));
+                    return Err(MatcherError::UnknownFormatInIncludeStmt(f.to_owned()));
                 }
-                OtherText(s) => buf += s.as_str(),
+                OtherText(s) => buf += s,
             }
         }
 
@@ -344,7 +345,7 @@ impl<'c> Matcher<'c> {
         self.mapping = Mapping::default();
     }
 
-    fn mapping_set_mlvo(&mut self, ident: String) {
+    fn mapping_set_mlvo(&mut self, ident: &str) {
         // TODO: make this and its equivalent for kccgst more concise
         let pos = RulesMlvo::iter().enumerate().find(|(_, mlvo)| {
             let sval = mlvo.sval();
@@ -415,7 +416,7 @@ impl<'c> Matcher<'c> {
         self.mapping.num_mlvo += 1;
     }
 
-    fn mapping_set_kccgst(&mut self, ident: String) {
+    fn mapping_set_kccgst(&mut self, ident: &str) {
         let pos = RulesKccgst::iter().enumerate().find(|(_, kccgst)| {
             let sval = kccgst.sval();
             ident.len() >= sval.len() //TODO: equals?
@@ -499,7 +500,7 @@ impl<'c> Matcher<'c> {
         self.rule.skip = self.mapping.skip;
     }
 
-    fn rule_set_mlvo_common(&mut self, ident: String, match_type: MlvoMatchType) {
+    fn rule_set_mlvo_common(&mut self, ident: &str, match_type: MlvoMatchType) {
         if self.rule.mlvo_value_at_pos.len() + 1 > self.mapping.num_mlvo {
             log::error!("invalid rule: has more values than the mapping line; ignoring rule");
             self.rule.skip = true;
@@ -507,22 +508,21 @@ impl<'c> Matcher<'c> {
         }
         // TODO: check bounds
         self.rule.match_type_at_pos.push(match_type);
-        self.rule.mlvo_value_at_pos.push(ident);
+        self.rule.mlvo_value_at_pos.push(ident.to_owned());
     }
     fn rule_set_mlvo_wildcard(&mut self) {
-        let dummy = String::new();
-        self.rule_set_mlvo_common(dummy, MlvoMatchType::Wildcard)
+        self.rule_set_mlvo_common("", MlvoMatchType::Wildcard)
     }
 
-    fn rule_set_mlvo_group(&mut self, ident: String) {
+    fn rule_set_mlvo_group(&mut self, ident: &str) {
         self.rule_set_mlvo_common(ident, MlvoMatchType::Group)
     }
 
-    fn rule_set_mlvo(&mut self, ident: String) {
+    fn rule_set_mlvo(&mut self, ident: &str) {
         self.rule_set_mlvo_common(ident, MlvoMatchType::Normal)
     }
 
-    fn rule_set_kccgst(&mut self, ident: String) {
+    fn rule_set_kccgst(&mut self, ident: &str) {
         if self.rule.kccgst_value_at_pos.len() + 1 > self.mapping.num_kccgst {
             log::error!("invalid rule: has more values than the mapping line; ignoring rule");
             self.rule.skip = true;
@@ -530,7 +530,7 @@ impl<'c> Matcher<'c> {
         }
 
         // TODO: check bounds
-        self.rule.kccgst_value_at_pos.push(ident);
+        self.rule.kccgst_value_at_pos.push(ident.to_owned());
     }
 
     fn match_group(&self, group_name: &str, elem_to_find: &str) -> bool {
@@ -590,9 +590,11 @@ impl<'c> Matcher<'c> {
     fn append_expanded_kccgst_value(
         &mut self,
         category: &RulesKccgst,
-        value: String,
+        i: usize,
     ) -> Result<(), MatcherError> {
         // TODO: implement this with a Logos lexer
+
+        let value = &self.rule.kccgst_value_at_pos[i];
 
         let mut expanded = String::new();
 
@@ -810,9 +812,8 @@ impl<'c> Matcher<'c> {
         for i in 0..self.mapping.num_kccgst {
             // TODO: reconsider these data structures
             let kccgst = self.mapping.kccgst_at_pos[i].unwrap();
-            let value = self.rule.kccgst_value_at_pos[i].clone();
 
-            self.append_expanded_kccgst_value(&kccgst, value)?;
+            self.append_expanded_kccgst_value(&kccgst, i)?;
         }
 
         // If a rule matches in a rule set, the rest of the set
@@ -856,18 +857,15 @@ fn extract_layout_index(s: &str) -> Option<(LayoutIndex, usize)> {
     Some((layout_index, 3))
 }
 
-fn split_comma_separated_mlvo(s: Option<&String>) -> Vec<MatchedSval> {
-    let s = match s {
-        Some(s) => s,
-        None => "",
-    };
+fn split_comma_separated_mlvo(s: Option<&str>) -> Vec<MatchedSval> {
+    let s = s.unwrap_or("");
 
-    let substrings: Vec<String> = s.split(',').map(|s| s.to_owned()).collect();
+    let substrings: Vec<&str> = s.split(',').collect();
 
     // TODO: Make sure the array returned by this function always includes at least one value.
 
     let strings = match substrings.len() {
-        0 => vec!["".into()],
+        0 => vec![""],
         _ => substrings,
     };
 
@@ -881,7 +879,7 @@ fn split_comma_separated_mlvo(s: Option<&String>) -> Vec<MatchedSval> {
 }
 
 #[derive(PartialEq, Debug)]
-enum MatcherState {
+enum MatcherState<'input> {
     Initial,
     Bang,
     GroupName,
@@ -894,17 +892,17 @@ enum MatcherState {
     RuleMlvo,
     RuleMlvoNoTok(
         //pass lexer.next() from last iteration
-        Option<Result<RulesToken, &'static str>>,
+        Option<Result<RulesToken<'input>, &'static str>>,
     ),
     RuleKccgst,
-    Unexpected(Option<Result<RulesToken, &'static str>>),
+    Unexpected(Option<Result<RulesToken<'input>, &'static str>>),
     Finish,
 }
 
-impl<'c> Matcher<'c> {
+impl<'input, 'c: 'input> Matcher<'c> {
     fn state_machine(
         &mut self,
-        mut lexer: Lexer<RulesToken>,
+        mut lexer: Lexer<'input, RulesToken<'input>>,
         include_depth: usize,
     ) -> Result<(), MatcherError> {
         use MatcherState::*;

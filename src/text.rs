@@ -250,10 +250,8 @@ impl Context {
         format!("<{}>", self.xkb_atom_text(name))
     }
 
-    pub(crate) fn si_match_text(&self, _type: &MatchOperation) -> String {
-        lookup_value(&SYM_INTERPRET_MATCH_MASK_NAMES, _type.clone(), false)
-            .unwrap_or("")
-            .into()
+    pub(crate) fn si_match_text(&self, _type: &MatchOperation) -> &str {
+        lookup_value(&SYM_INTERPRET_MATCH_MASK_NAMES, _type.clone(), false).unwrap_or("")
     }
     pub(crate) fn mod_mask_text(&self, mods: &ModSet, mask: ModMask) -> String {
         const BUF_SIZE: usize = 1024;
