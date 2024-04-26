@@ -24,17 +24,17 @@ impl AtomTable {
         self.table.get(string).map(|a| a + 1)
     }
 
-    pub(crate) fn intern(&mut self, string: String) -> Atom {
+    pub(crate) fn intern(&mut self, string: &str) -> Atom {
         // TODO: do this more efficiently
         // follow original implementation
 
-        if let Some(existing_atom) = self.table.get(string.as_str()) {
+        if let Some(existing_atom) = self.table.get(string) {
             return *existing_atom + 1;
         }
 
-        self.data.push(string.clone());
+        self.data.push(string.to_string());
         let index = self.data.len() - 1;
-        self.table.insert(string, index);
+        self.table.insert(string.to_string(), index);
 
         index + 1
     }

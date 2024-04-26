@@ -732,7 +732,7 @@ impl KeymapBuilder<TextV1> {
             empty if empty.is_empty() => vec![KeyType {
                 mods: Mods { mods: 0, mask: 0 },
                 entries: vec![],
-                name: self.context.atom_intern("default".to_owned()),
+                name: self.context.atom_intern("default"),
                 num_levels: 1,
                 level_names: BTreeMap::new(),
             }],

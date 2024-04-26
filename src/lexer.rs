@@ -31,7 +31,7 @@ pub(crate) fn check_supported_char_encoding(s: &str) -> Result<&str, ()> {
 
 // TODO: return the span/location information
 pub(crate) struct Lexer<'input> {
-    token_stream: logos::SpannedIter<'input, RawToken>,
+    token_stream: logos::SpannedIter<'input, RawToken<'input>>,
 }
 
 impl<'input> Lexer<'input> {
@@ -59,17 +59,16 @@ impl<'input> Iterator for Lexer<'input> {
 
 #[allow(dead_code)]
 #[derive(Logos, Debug, PartialEq)]
-enum RawToken {
-    #[regex("\"[^\"]*\"", |lex| lex.slice().parse().ok().map(process_string), priority=5)]
-    String(String),
+enum RawToken<'input> {
+    #[regex("\"[^\"]*\"", priority = 5)]
+    String(&'input str),
 
     #[regex(r"[[//]#][^\n]*[\n\r]?", |_| logos::Skip, priority=5)]
     Comment,
 
     // <is_graph*> but not <>
-    #[regex(r"<[\x21-\x3B\x3D\x3F-\x7E]*>", 
-        |lex| lex.slice().parse().ok().map(remove_brackets), priority=4)]
-    Keyname(String),
+    #[regex(r"<[\x21-\x3B\x3D\x3F-\x7E]*>", priority = 4)]
+    Keyname(&'input str),
 
     #[regex("[ \t\n]+", |_| logos::Skip, priority=3)]
     Whitespace,
@@ -122,8 +121,8 @@ enum RawToken {
     #[token(r"~", priority = 3)]
     Invert,
 
-    #[regex("[A-Za-z_][A-Za-z0-9_]*", |lex| lex.slice().parse().ok(), priority=2)]
-    Ident(String),
+    #[regex("[A-Za-z_][A-Za-z0-9_]*", priority = 2)]
+    Ident(&'input str),
     #[regex("0[xX][0-9a-fA-F]+", |lex| hex_convert(lex.slice().parse().ok()), priority=1)]
     HexNumber(u32),
 
@@ -133,8 +132,7 @@ enum RawToken {
     #[regex(r"[0-9]*\.[0-9]+", |lex| lex.slice().parse().ok(), priority=1)]
     Float(f64),
 }
-
-#[derive(Logos, Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Token {
     Comment,
     Whitespace,
@@ -207,12 +205,12 @@ impl std::fmt::Display for Token {
     }
 }
 
-impl From<RawToken> for Token {
+impl<'token> From<RawToken<'token>> for Token {
     fn from(raw_token: RawToken) -> Self {
         match raw_token {
             RawToken::Comment => Token::Comment,
             RawToken::Whitespace => Token::Whitespace,
-            RawToken::String(s) => Token::String(s),
+            RawToken::String(s) => Token::String(process_string(&s.chars().collect::<Vec<_>>())),
             RawToken::Ident(s) => keyword_match(s),
             RawToken::UInt(s) => Token::UInt(s),
             RawToken::Float(f) => Token::Float(f),
@@ -232,7 +230,7 @@ impl From<RawToken> for Token {
             RawToken::Divide => Token::Divide,
             RawToken::Exclam => Token::Exclam,
             RawToken::Invert => Token::Invert,
-            RawToken::Keyname(s) => Token::Keyname(s),
+            RawToken::Keyname(s) => Token::Keyname(remove_brackets(s).into()),
             RawToken::HexNumber(u) => Token::UInt(u),
         }
     }
@@ -246,16 +244,12 @@ fn hex_convert(token: Option<String>) -> Option<u32> {
     None
 }
 
-fn remove_brackets(token: String) -> String {
-    let mut chars = token.chars();
-    chars.next();
-    chars.next_back();
-    chars.collect()
+fn remove_brackets(token: &str) -> &str {
+    &token[1..token.len() - 1]
 }
 
-fn process_string(token: String) -> String {
+fn process_string(chars: &[char]) -> String {
     // TODO: avoid multiple copies
-    let chars = token.chars().collect::<Vec<char>>();
     let slice = &chars[1..chars.len() - 1];
 
     let mut new = String::new();
@@ -282,10 +276,10 @@ fn process_string(token: String) -> String {
                         .or_else(|| s.get(1..2))
                         .unwrap()
                         .iter()
-                        .take_while(|c| ('0'..='7').contains(&c))
+                        .take_while(|c| ('0'..='7').contains(c))
                         .collect::<String>();
 
-                    if octal.len() > 0 {
+                    if !octal.is_empty() {
                         if let Ok(c) = u8::from_str_radix(&octal, 8) {
                             if c != 0 {
                                 new.push(c as char);
@@ -312,27 +306,32 @@ fn process_string(token: String) -> String {
     new
 }
 
-fn keyword_match(token: String) -> Token {
+fn keyword_match(token: &str) -> Token {
     use crate::text::lookup_key;
-    match lookup_key(&crate::keywords::KEYWORDS, &token) {
+    match lookup_key(&crate::keywords::KEYWORDS, token) {
         Some(keyword) => keyword.clone(),
-        None => Token::Ident(token),
+        None => Token::Ident(token.into()),
     }
 }
 
 #[cfg(test)]
 mod test {
 
+    fn test_process_string(s: &str) -> String {
+        let chars_array = s.chars().collect::<Vec<_>>();
+
+        process_string(&chars_array)
+    }
     use super::*;
     #[test]
     fn test_string_process() {
-        assert_eq!(process_string(r#""""#.into()), "");
-        assert_eq!(process_string(r#""Test\e""#.into()), "Test\x1b");
-        assert_eq!(process_string(r#""Test\e1""#.into()), "Test\x1b1");
-        assert_eq!(process_string(r#""Test\00f""#.into()), "Testf");
-        assert_eq!(process_string(r#""Test\9f""#.into()), "Testf");
-        assert_eq!(process_string(r#""Test\1f""#.into()), "Test\u{1}f");
-        assert_eq!(process_string(r#""Test\1\2""#.into()), "Test\u{1}\u{2}");
-        assert_eq!(process_string(r#""Test\401\2""#.into()), "Test\u{2}");
+        assert_eq!(test_process_string(r#""""#), "");
+        assert_eq!(test_process_string(r#""Test\e""#), "Test\x1b");
+        assert_eq!(test_process_string(r#""Test\e1""#), "Test\x1b1");
+        assert_eq!(test_process_string(r#""Test\00f""#), "Testf");
+        assert_eq!(test_process_string(r#""Test\9f""#), "Testf");
+        assert_eq!(test_process_string(r#""Test\1f""#), "Test\u{1}f");
+        assert_eq!(test_process_string(r#""Test\1\2""#), "Test\u{1}\u{2}");
+        assert_eq!(test_process_string(r#""Test\401\2""#), "Test\u{2}");
     }
 }

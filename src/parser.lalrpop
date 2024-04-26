@@ -389,18 +389,18 @@ FieldSpec: Atom = {
 	}
 
 Element: Atom = {
-	<t:"ACTION_TOK"> => param.atom_intern("action".to_owned()),
-	<t:"INTERPRET"> => param.atom_intern("interpret".to_owned()),
-	<t:"TYPE"> => param.atom_intern("type".to_owned()),
-	<t:"KEY"> => param.atom_intern("key".to_owned()),
-	<t:"GROUP"> => param.atom_intern("group".to_owned()),
+	<t:"ACTION_TOK"> => param.atom_intern("action"),
+	<t:"INTERPRET"> => param.atom_intern("interpret"),
+	<t:"TYPE"> => param.atom_intern("type"),
+	<t:"KEY"> => param.atom_intern("key"),
+	<t:"GROUP"> => param.atom_intern("group"),
 	<t:"MODIFIER_MAP"> 
-		=> param.atom_intern("modifier_map".to_owned()),
-	<t:"INDICATOR"> => param.atom_intern("indicator".to_owned()),
-	<t:"SHAPE"> => param.atom_intern("shape".to_owned()),
-	<t:"ROW"> => param.atom_intern("row".to_owned()),
-	<t:"SECTION"> => param.atom_intern("section".to_owned()),
-	<t:"TEXT"> => param.atom_intern("text".to_owned()),
+		=> param.atom_intern("modifier_map"),
+	<t:"INDICATOR"> => param.atom_intern("indicator"),
+	<t:"SHAPE"> => param.atom_intern("shape"),
+	<t:"ROW"> => param.atom_intern("row"),
+	<t:"SECTION"> => param.atom_intern("section"),
+	<t:"TEXT"> => param.atom_intern("text"),
 }
 
 OptMergeMode: MergeMode = {
@@ -603,12 +603,12 @@ KeyCode: Keycode = {
 }
 
 Ident: Atom = {
-	<ident: "IDENT"> => param.atom_intern(ident),
-	"DEFAULT" => param.atom_intern("default".to_owned()),
+	<ident: "IDENT"> => param.atom_intern(&ident),
+	"DEFAULT" => param.atom_intern("default"),
 }
 
 String: Atom = {
-	<string:"STRING"> => param.atom_intern(string)
+	<string:"STRING"> => param.atom_intern(&string)
 } 
 
 OptMapName: Option<String> = {
@@ -621,7 +621,7 @@ MapName: String = {
 }
 
 KeyName: Atom = {
-	<name:"KEYNAME"> => param.atom_intern(name)
+	<name:"KEYNAME"> => param.atom_intern(&name)
 }
 
 

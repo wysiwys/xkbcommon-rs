@@ -88,7 +88,7 @@ impl KeyInfo {
     fn new(ctx: &mut Context) -> Self {
         Self {
             merge: MergeMode::Override,
-            name: ctx.atom_intern("*".into()),
+            name: ctx.atom_intern("*"),
             out_of_range_group_action: RangeExceedType::Wrap,
 
             // memset 0 in original
@@ -1482,7 +1482,7 @@ impl GroupInfo {
         let width = self.levels.len();
 
         if width <= 1 {
-            return Some(ctx.atom_intern("ONE_LEVEL".into()));
+            return Some(ctx.atom_intern("ONE_LEVEL"));
         }
 
         let sym0 = self.get_first_sym_at_level(0).unwrap_or(xkeysym::NO_SYMBOL);
@@ -1490,13 +1490,13 @@ impl GroupInfo {
 
         if width == 2 {
             if keysym_is_lower(&sym0) && keysym_is_upper(&sym1) {
-                return Some(ctx.atom_intern("ALPHABETIC".into()));
+                return Some(ctx.atom_intern("ALPHABETIC"));
             }
             if sym0.is_keypad_key() || sym1.is_keypad_key() {
-                return Some(ctx.atom_intern("KEYPAD".into()));
+                return Some(ctx.atom_intern("KEYPAD"));
             }
 
-            return Some(ctx.atom_intern("TWO_LEVEL".into()));
+            return Some(ctx.atom_intern("TWO_LEVEL"));
         }
 
         if width <= 4 {
@@ -1507,17 +1507,17 @@ impl GroupInfo {
                     false => xkeysym::NO_SYMBOL,
                 };
                 if keysym_is_lower(&sym2) && keysym_is_upper(&sym3) {
-                    return Some(ctx.atom_intern("FOUR_LEVEL_ALPHABETIC".into()));
+                    return Some(ctx.atom_intern("FOUR_LEVEL_ALPHABETIC"));
                 }
 
-                return Some(ctx.atom_intern("FOUR_LEVEL_SEMIALPHABETIC".into()));
+                return Some(ctx.atom_intern("FOUR_LEVEL_SEMIALPHABETIC"));
             }
 
             if sym0.is_keypad_key() || sym1.is_keypad_key() {
-                return Some(ctx.atom_intern("FOUR_LEVEL_KEYPAD".into()));
+                return Some(ctx.atom_intern("FOUR_LEVEL_KEYPAD"));
             }
 
-            return Some(ctx.atom_intern("FOUR_LEVEL".into()));
+            return Some(ctx.atom_intern("FOUR_LEVEL"));
         }
 
         None

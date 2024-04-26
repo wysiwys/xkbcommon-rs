@@ -630,7 +630,7 @@ impl ModSet {
         let mods = names
             .iter()
             .map(|name| {
-                let atom = ctx.atom_intern(String::from(*name));
+                let atom = ctx.atom_intern(name);
                 Mod {
                     name: atom,
                     mod_type: ModType::REAL,

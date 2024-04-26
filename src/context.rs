@@ -125,7 +125,7 @@ impl Context {
         self.atom_table.atom_lookup(string)
     }
 
-    pub(crate) fn atom_intern(&mut self, string: String) -> Atom {
+    pub(crate) fn atom_intern(&mut self, string: &str) -> Atom {
         self.atom_table.intern(string)
     }
 

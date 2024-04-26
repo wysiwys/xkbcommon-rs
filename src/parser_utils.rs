@@ -18,7 +18,7 @@ pub(crate) struct ParserParam<'p> {
 }
 
 impl<'p> ParserParam<'p> {
-    pub(crate) fn atom_intern(&mut self, ident: String) -> Atom {
+    pub(crate) fn atom_intern(&mut self, ident: &str) -> Atom {
         self.ctx.atom_intern(ident)
     }
 }
