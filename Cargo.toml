@@ -19,7 +19,7 @@ server = []
 #debuginfo-level = 1
 panic = 'abort'
 #opt-level = 'z' # size optimization
-#lto = true # link time optimization
+lto = true # link time optimization
 codegen-units = 1 # reduce codegen units
 strip = true # strip symbols from binary
 
