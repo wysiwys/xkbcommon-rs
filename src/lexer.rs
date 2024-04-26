@@ -254,77 +254,62 @@ fn remove_brackets(token: String) -> String {
 }
 
 fn process_string(token: String) -> String {
-    // remove brackets
-    let mut chars = token.chars();
-    chars.next();
-    chars.next_back();
+    // TODO: avoid multiple copies
+    let chars = token.chars().collect::<Vec<char>>();
+    let slice = &chars[1..chars.len() - 1];
 
-    let mut string = String::new();
+    let mut new = String::new();
+    let len = slice.len();
+    let mut i = 0;
 
-    // remove invalid escape sequences
-    // backslash followed by one, two, or three
-    // octal digits (0-7)
-    while let Some(c) = chars.next() {
-        if c == '\\' {
-            let mut octal = String::new();
-            for i in 0..3 {
-                if let Some(c) = chars.next() {
-                    if ('0'..='7').contains(&c) {
-                        octal.push(c);
-                        if i < 2 {
-                            continue;
-                        } else {
-                            // add if valid ascii character
-                            if let Ok(c) = u8::from_str_radix(&octal, 8) {
-                                string.push(c as char);
-                                break;
+    while i < len {
+        if let Some(esc) = slice.get(i..i + 2) {
+            let mut increment = 2;
+
+            match esc {
+                &['\\', 'n'] => new += "\n",
+                &['\\', 't'] => new += "\t",
+                &['\\', 'r'] => new += "\r",
+                &['\\', 'b'] => new += "\\",   //backslash
+                &['\\', 'f'] => new += "\x0c", // form feed page break
+                &['\\', 'v'] => new += "\x0b",
+                &['\\', 'e'] => new += "\x1b", // octal \033
+                s if s.starts_with(&['\\']) => {
+                    // get the next 1..3 characters.
+                    let octal = slice
+                        .get(i + 1..i + 4)
+                        .or_else(|| slice.get(i + 1..i + 3))
+                        .or_else(|| s.get(1..2))
+                        .unwrap()
+                        .iter()
+                        .take_while(|c| ('0'..='7').contains(&c))
+                        .collect::<String>();
+
+                    if octal.len() > 0 {
+                        if let Ok(c) = u8::from_str_radix(&octal, 8) {
+                            if c != 0 {
+                                new.push(c as char);
                             }
                         }
-                    } else if i == 0 {
-                        match c {
-                            'n' => {
-                                string += "\n";
-                                break;
-                            }
-                            't' => {
-                                string += "\t";
-                                break;
-                            }
-                            'r' => {
-                                string += "\r";
-                                break;
-                            }
-                            'b' => {
-                                string += "\\";
-                                break;
-                            } // backslash
-                            'f' => {
-                                string += "\x0c";
-                                break;
-                            } // form feed page break
-                            'v' => {
-                                string += "\x0b";
-                                break;
-                            }
-                            'e' => {
-                                string += "\x1b";
-                                break;
-                            } // octal \033
-                            _ => {}
-                        }
-                    } else {
-                        // TODO: warn unknown escape seq?
-                        string.push(c);
-                        break;
+                        increment += octal.len() - 1;
                     }
                 }
-            }
+                // non-escape
+                s => {
+                    new.push(s[0]);
+                    increment = 1;
+                }
+            };
+            i += increment;
         } else {
-            string.push(c);
+            assert_eq!(i + 1, len);
+
+            new.push(slice[i]);
+            i += 1;
         }
     }
 
-    string
+    new
 }
 
 fn keyword_match(token: String) -> Token {
@@ -332,5 +317,22 @@ fn keyword_match(token: String) -> Token {
     match lookup_key(&crate::keywords::KEYWORDS, &token) {
         Some(keyword) => keyword.clone(),
         None => Token::Ident(token),
+    }
+}
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+    #[test]
+    fn test_string_process() {
+        assert_eq!(process_string(r#""""#.into()), "");
+        assert_eq!(process_string(r#""Test\e""#.into()), "Test\x1b");
+        assert_eq!(process_string(r#""Test\e1""#.into()), "Test\x1b1");
+        assert_eq!(process_string(r#""Test\00f""#.into()), "Testf");
+        assert_eq!(process_string(r#""Test\9f""#.into()), "Testf");
+        assert_eq!(process_string(r#""Test\1f""#.into()), "Test\u{1}f");
+        assert_eq!(process_string(r#""Test\1\2""#.into()), "Test\u{1}\u{2}");
+        assert_eq!(process_string(r#""Test\401\2""#.into()), "Test\u{2}");
     }
 }
