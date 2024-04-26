@@ -262,7 +262,8 @@ fn test_context() {
 
     let atom = context.atom_intern("HELLOjunkjunkjunk".into());
 
-    assert!(atom != 0);
+    // invalid value is now None
+    //assert!(atom != 0);
 
     assert_eq!(context.atom_text(atom), Some("HELLOjunkjunkjunk".into()));
 

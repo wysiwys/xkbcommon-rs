@@ -25,6 +25,8 @@ strip = true # strip symbols from binary
 
 [dependencies]
 
+indexmap = "2.2.6"
+
 thiserror = "1.0.58"
 log = "0.4.21"
 bitflags = "2.4.2"

@@ -1,50 +1,34 @@
 pub type Atom = usize;
 
-// TODO: use an insert-only linear probing hash table,
-// if such a crate exists,
-// or look up an efficient data structure for this use case.
-// Alternatively, the original implementation in `context.c` can be used
+use indexmap::IndexSet;
 
 #[derive(Clone)]
 pub(crate) struct AtomTable {
-    // TODO: don't duplicate data storage
-    data: Vec<String>,
-    table: std::collections::HashMap<String, Atom>,
+    table: IndexSet<String>,
 }
 
 impl AtomTable {
     pub(crate) fn new() -> Self {
         Self {
-            data: vec![],
-            table: std::collections::HashMap::new(),
+            table: IndexSet::new(),
         }
     }
 
     pub(crate) fn atom_lookup(&self, string: &str) -> Option<Atom> {
-        self.table.get(string).map(|a| a + 1)
+        self.table.get_full(string).map(|(atom, _)| atom)
     }
 
     pub(crate) fn intern(&mut self, string: &str) -> Atom {
-        // TODO: do this more efficiently
-        // follow original implementation
-
-        if let Some(existing_atom) = self.table.get(string) {
-            return *existing_atom + 1;
+        if let Some((existing_atom, _)) = self.table.get_full(string) {
+            return existing_atom;
         }
 
-        self.data.push(string.to_string());
-        let index = self.data.len() - 1;
-        self.table.insert(string.to_string(), index);
+        let (atom, _) = self.table.insert_full(string.to_string());
 
-        index + 1
+        atom
     }
 
     pub(crate) fn get(&self, atom: Atom) -> Option<&str> {
-        let atom_idx = match atom {
-            0 => return None,
-            atom => atom - 1,
-        };
-
-        self.data.get(atom_idx).map(|s| s.as_str())
+        self.table.get_index(atom).map(|s| s.as_str())
     }
 }
