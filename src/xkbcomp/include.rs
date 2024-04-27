@@ -1,4 +1,4 @@
-// Licenses from original include.c:
+// Based on include.h and include.c
 /************************************************************
  * Copyright (c) 1994 by Silicon Graphics Computer Systems, Inc.
  *
@@ -27,6 +27,7 @@
 
 /*
  * Copyright © 2012 Ran Benita <ran234@gmail.com>
+ * Copyright © 2024 wysiwys
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
