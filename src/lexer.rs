@@ -114,7 +114,7 @@ enum RawToken<'input> {
     #[regex(r"<[\x21-\x3B\x3D\x3F-\x7E]*>", priority = 4)]
     Keyname(&'input str),
 
-    #[regex("[ \t\n]+", |_| logos::Skip, priority=3)]
+    #[regex("[ \x00\t\n]+", |_| logos::Skip, priority=3)]
     Whitespace,
 
     #[token(";", priority = 3)]
