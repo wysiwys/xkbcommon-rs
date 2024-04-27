@@ -1,7 +1,8 @@
-/* License of `rules-file-includes.c`:
+/* based on test/rules-file-includes.c
  * --------------------------------------------------
  * Copyright © 2012 Ran Benita <ran234@gmail.com>
  * Copyright © 2019 Red Hat, Inc.
+ * Copyright © 2024 wysiwys
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),

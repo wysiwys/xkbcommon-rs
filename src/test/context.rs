@@ -1,6 +1,7 @@
-/* Original license of `context.c`:
+/* based on test/context.c
  * -----------------------------------------
  * Copyright © 2012 Intel Corporation
+ * Copyright © 2024 wysiwys
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
