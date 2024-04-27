@@ -166,7 +166,7 @@ enum RawToken<'input> {
 
     #[regex("[A-Za-z_][A-Za-z0-9_]*", priority = 2)]
     Ident(&'input str),
-    #[regex("0[xX][0-9a-fA-F]+", |lex| hex_convert(lex.slice().parse().ok()), priority=1)]
+    #[regex("0[xX][0-9a-fA-F]+", |lex| hex_convert(lex.slice()), priority=1)]
     HexNumber(u32),
 
     #[regex("[0-9]+", |lex| lex.slice().parse().ok(), priority=1)]
@@ -280,12 +280,8 @@ impl<'token> From<RawToken<'token>> for Token {
     }
 }
 
-fn hex_convert(token: Option<String>) -> Option<u32> {
-    if let Some(token) = token {
-        return u32::from_str_radix(&token[2..], 16).ok();
-    }
-
-    None
+fn hex_convert(token: &str) -> Option<u32> {
+    u32::from_str_radix(&token[2..], 16).ok()
 }
 
 fn process_string(chars: &[char]) -> String {
