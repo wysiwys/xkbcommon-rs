@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT OR Apache-2.0 OR Zlib
-// This file was automatically generated using keysym-generator.
+// This file was automatically generated using keysym_map_gen.
 
 // Copyright 2022-2023 John Nunley
+// Copyright © 2024 wysiwys
 //
 // Licensed under the Apache License, Version 2.0, the MIT License, and
 // the Zlib license ("the Licenses"), you may not use this file except in
