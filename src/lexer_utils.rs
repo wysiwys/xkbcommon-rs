@@ -1,4 +1,6 @@
+//based on part of scanner-utils.h
 /*
+ * Copyright © 2012 Ran Benita <ran234@gmail.com>
  * Copyright © 2024 wysiwys
  *
  * Permission is hereby granted, free of charge, to any person obtaining a
@@ -19,9 +21,32 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
- *
  */
 
-pub(super) fn is_valid_utf8(buf: &[u8]) -> bool {
-    std::str::from_utf8(buf).is_ok()
+pub(crate) fn check_supported_char_encoding(s: &str) -> Result<&str, ()> {
+    if s.len() < 2 {
+        return Ok(s);
+    }
+
+    let bom = "\u{feff}";
+    if let Some(s) = s.strip_prefix(bom) {
+        return Ok(s);
+    }
+
+    // early detection of wrong file encoding, e.g. UTF-16 or UTF-32
+
+    let mut c = s.chars();
+    let first_char = c.next().unwrap();
+    let second_char = c.next().unwrap();
+
+    // TODO: is this necessary?
+    if first_char == '\0' || second_char == '\0' {
+        // TODO: handle case where first char not '\0'
+        log::error!("Unexpected null character");
+        return Err(());
+    }
+
+    // TODO: enforce the first character to be ASCII
+
+    Ok(s)
 }
