@@ -284,6 +284,7 @@ fn hex_convert(token: &str) -> Option<u32> {
     u32::from_str_radix(&token[2..], 16).ok()
 }
 
+// based on string processing part of _xkbcommon_lex
 fn process_string(chars: &[char]) -> String {
     // TODO: avoid multiple copies
     let slice = &chars[1..chars.len() - 1];
