@@ -288,6 +288,8 @@ pub mod xkb_state {
 
     pub use super::rust_xkbcommon::StateComponent;
 
+    pub use super::rust_xkbcommon::StateMatch;
+
     pub use super::keymap::XKB_MAX_GROUPS;
 }
 pub use xkb_state::State;

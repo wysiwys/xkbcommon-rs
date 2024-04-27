@@ -33,6 +33,7 @@ mod modifiers;
 mod rules_file;
 mod rules_file_includes;
 mod rulescomp;
+mod state;
 mod stringcomp;
 
 // use all the functions in `common`

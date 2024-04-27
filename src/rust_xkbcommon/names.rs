@@ -23,7 +23,23 @@
  *
  * Author: Daniel Stone <daniel@fooishbar.org>
  */
+
+use std::borrow::Borrow;
+
+// TODO: for both of these, implement deref as str?
 pub struct ModName(pub &'static str);
+
+impl Borrow<str> for ModName {
+    fn borrow(&self) -> &str {
+        self.0
+    }
+}
+
+impl Borrow<str> for LedName {
+    fn borrow(&self) -> &str {
+        self.0
+    }
+}
 
 pub struct LedName(pub &'static str);
 

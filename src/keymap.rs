@@ -94,6 +94,8 @@ use std::collections::BTreeMap;
 pub(crate) const MOD_REAL_MASK_ALL: ModMask = 0x000000ff;
 use crate::rust_xkbcommon::*;
 
+use std::borrow::Borrow;
+
 /// Maximum number of allowed groups
 ///
 /// This limit is artificially enforced. The main
@@ -1015,8 +1017,8 @@ impl Keymap {
         self.context.atom_text(_mod.name).map(|s| s.to_owned())
     }
 
-    pub fn mod_get_index(&self, name: &str) -> Option<ModIndex> {
-        let atom = self.context.atom_lookup(name)?;
+    pub fn mod_get_index<T: Borrow<str>>(&self, name: T) -> Option<ModIndex> {
+        let atom = self.context.atom_lookup(name.borrow())?;
 
         self.mods.mod_name_to_index(atom, ModType::BOTH)
     }

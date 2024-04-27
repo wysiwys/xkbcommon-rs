@@ -84,6 +84,8 @@ use crate::keymap::*;
 use crate::keysyms::*;
 use crate::rust_xkbcommon::*;
 
+use std::borrow::Borrow;
+
 pub(crate) mod errors {
     use super::*;
     use thiserror::Error;
@@ -1643,11 +1645,12 @@ impl State {
     /// Returns `Ok(true)` if the given modifier is active with
     /// the specified type(s), `Ok(false)` if not, or `Err(...)`
     /// if the modifier is invalid.
-    pub fn mod_name_is_active(
+    pub fn mod_name_is_active<T: Borrow<str>>(
         &self,
-        name: &str,
+        name: T,
         _type: StateComponent,
     ) -> Result<bool, ModIsActiveError> {
+        let name: &str = name.borrow();
         let idx = match self.keymap.mod_get_index(name) {
             Some(idx) => idx,
             // TODO: rename to InvalidModifier
@@ -1662,19 +1665,19 @@ impl State {
     /// Returns `Ok(true)` if the given modifiers are active with
     /// the specified type(s), `Ok(false)` if not, or `Err(...)`
     /// if the modifiers are invalid.
-    pub fn mod_names_are_active(
+    pub fn mod_names_are_active<T: Borrow<str>>(
         &self,
         _type: StateComponent,
         _match: StateMatch,
-        args: Vec<String>,
+        args: Vec<T>,
     ) -> Result<bool, ModIsActiveError> {
         let mut wanted: ModMask = 0;
 
         for arg in args {
             let idx = self
                 .keymap
-                .mod_get_index(&arg)
-                .ok_or(ModIsActiveError::NoSuchModName(arg))?;
+                .mod_get_index(arg.borrow())
+                .ok_or(ModIsActiveError::NoSuchModName(arg.borrow().to_string()))?;
             wanted |= 1 << idx;
         }
 
