@@ -17,17 +17,16 @@ client = []
 server = []
 
 [profile.release]
-# for perf
-#debug = 2
-#debuginfo-level = 1
 panic = 'abort'
-#opt-level = 'z' # size optimization
+opt-level = 3
 lto = true # link time optimization
 codegen-units = 1 # reduce codegen units
 strip = true # strip symbols from binary
+debug = false
 
 [dependencies]
 
+# For string lookup
 indexmap = "2.2.6"
 
 thiserror = "1.0.58"
