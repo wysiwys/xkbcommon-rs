@@ -273,7 +273,8 @@ impl<'token> From<RawToken<'token>> for Token {
             RawToken::Divide => Token::Divide,
             RawToken::Exclam => Token::Exclam,
             RawToken::Invert => Token::Invert,
-            RawToken::Keyname(s) => Token::Keyname(remove_brackets(s).into()),
+            // remove brackets
+            RawToken::Keyname(s) => Token::Keyname(s[1..s.len() - 1].into()),
             RawToken::HexNumber(u) => Token::UInt(u),
         }
     }
@@ -285,10 +286,6 @@ fn hex_convert(token: Option<String>) -> Option<u32> {
     }
 
     None
-}
-
-fn remove_brackets(token: &str) -> &str {
-    &token[1..token.len() - 1]
 }
 
 fn process_string(chars: &[char]) -> String {
