@@ -1,5 +1,6 @@
 // based on test/keysym.h and test/keysym.c
-// TODO: keysym.h license
+// The syms are those in keysym.h, which are the ambiguous case insensitive names generated in
+// scripts/update-headers.py
 /*
  * Copyright © 2009 Dan Nicholson
  * Copyright © 2024 wysiwys

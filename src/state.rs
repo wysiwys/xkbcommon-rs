@@ -1,7 +1,6 @@
 // Includes port of code in `state.c`,
 // and also some comments from include/xkbcommon.h
 //
-// all licenses for those files are included below
 /*
  * Copyright 1985, 1987, 1990, 1998  The Open Group
  * Copyright 2008  Dan Nicholson

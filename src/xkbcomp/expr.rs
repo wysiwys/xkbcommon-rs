@@ -1,5 +1,4 @@
 // based on expr.h and expr.c
-
 /************************************************************
  * Copyright (c) 1994 by Silicon Graphics Computer Systems, Inc.
  *

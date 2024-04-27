@@ -1,5 +1,4 @@
 // based on action.c and action.h
-//
 /************************************************************
  * Copyright (c) 1994 by Silicon Graphics Computer Systems, Inc.
  *

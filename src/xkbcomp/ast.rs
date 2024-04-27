@@ -1,5 +1,4 @@
 // based on ast.h, ast-build.h, and ast-build.c
-
 /************************************************************
  * Copyright (c) 1994 by Silicon Graphics Computer Systems, Inc.
  *
