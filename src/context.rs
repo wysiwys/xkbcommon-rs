@@ -37,24 +37,12 @@ use errors::*;
 
 #[derive(Clone)]
 pub struct Context {
-    //refcnt: i32,
     log_verbosity: i32,
-    //user_data: *void,
-
-    //names_dflt: XkbRuleNames,
-
-    // TODO: data type
     pub(crate) includes: Vec<String>,
     failed_includes: Vec<String>,
 
     atom_table: AtomTable,
 
-    //x11_atom_cache: Option<AtomCache>,
-
-    //text_buffer: String, //TODO: capacity 2048?
-    //text_next: usize,
-
-    // TODO: data type
     use_environment_names: bool,
     use_secure_getenv: bool,
 }
@@ -66,27 +54,19 @@ impl Context {
     where
         T: Into<ContextFlags>,
     {
-        // TODO: take int as argument
-        // TODO: logging
-
         // convert to flags, unsetting any unknown bits
         let context_flags = flags.into();
 
         let mut context = Self {
             log_verbosity: 0,
             use_environment_names: !context_flags.intersects(ContextFlags::NO_ENVIRONMENT_NAMES),
+            // TODO: find a way to implement secure_getenv
             use_secure_getenv: false,
             // !context_flags.intersects(ContextFlags::NO_SECURE_GETENV),
             atom_table: AtomTable::new(),
 
             includes: vec![],
             failed_includes: vec![],
-            // Unimplemented members
-
-            //x11_atom_cache: None,
-            //names_dflt
-            //text_buffer
-            //text_next
         };
 
         if !context_flags.intersects(ContextFlags::NO_DEFAULT_INCLUDES)
