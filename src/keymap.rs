@@ -511,8 +511,9 @@ impl Default for SymInterpret {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub(crate) struct Led {
+    // TODO: does this need to be an option?
     pub(crate) name: Option<Atom>, // xkb_atom_t
     pub(crate) which_groups: StateComponent,
     pub(crate) groups: LayoutMask,
@@ -1081,16 +1082,10 @@ impl Keymap {
 
     pub fn led_get_index(&self, name: impl AsRef<str>) -> Option<LedIndex> {
         let atom = self.context.atom_lookup(name.as_ref())?;
-
-        for (i, led) in self.leds.iter().enumerate() {
-            if let Some(led) = led {
-                if led.name == Some(atom) {
-                    return Some(i);
-                }
-            }
-        }
-
-        None
+        // TODO: why does name have to be Some(..)?
+        self.leds
+            .iter()
+            .position(|led| matches!(led, Some(led) if led.name == Some(atom)))
     }
 
     pub fn key_get_mods_for_level(
