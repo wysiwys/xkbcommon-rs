@@ -1,5 +1,5 @@
 
-// license of original parser.y:
+// based on parser.y
 //************************************************************
 // Copyright (c) 1994 by Silicon Graphics Computer Systems, Inc.
 //
@@ -25,7 +25,6 @@
 // THE USE OR PERFORMANCE OF THIS SOFTWARE.
 //
 // ********************************************************/
-// additional license for rust_xkbcommon contributions:
 //
 // Copyright © 2024 wysiwys
 //

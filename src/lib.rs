@@ -1,5 +1,4 @@
 // Includes comments and exports from include/xkbcommon/xkbcommon.h
-// Licenses from include/xkbcommon/xkbcommon.h:
 /*
  * Copyright 1985, 1987, 1990, 1998  The Open Group
  * Copyright 2008  Dan Nicholson

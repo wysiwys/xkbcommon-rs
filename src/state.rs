@@ -1,5 +1,5 @@
-// Includes port of code in `state.c`,
-// and also some comments from include/xkbcommon.h
+// Based on `state.c`,
+// and also includes some comments from include/xkbcommon.h
 //
 /*
  * Copyright 1985, 1987, 1990, 1998  The Open Group
@@ -54,6 +54,7 @@
  ********************************************************/
 
 /*
+ * Copyright © 2009-2012 Daniel Stone
  * Copyright © 2012 Intel Corporation
  * Copyright © 2012 Ran Benita <ran234@gmail.com>
  * Copyright © 2024 wysiwys

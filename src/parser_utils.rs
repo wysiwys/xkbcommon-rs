@@ -1,5 +1,4 @@
-// This file includes some of the content from parser.y
-// also includes parts of scanner.c
+// Includes code based on parts of parser.y and parts of scanner.c
 
 /************************************************************
 Copyright (c) 1994 by Silicon Graphics Computer Systems, Inc.
