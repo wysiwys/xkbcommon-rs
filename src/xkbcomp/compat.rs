@@ -333,10 +333,9 @@ impl CompatInfo {
             if key.is_none() || action.args.is_empty() || action.args.len() > 1 {
                 //TODO: is this correct?
 
-                let err = XkbMessageCode::NoId;
                 log::error!(
                     "{:?}: Illegal modifier predicate {:?}; Ignored",
-                    err,
+                    XkbMessageCode::NoId,
                     pred_txt
                 );
 
@@ -826,9 +825,7 @@ impl CompatInfo {
     ) -> Result<(), CompileCompatError> {
         let mut ok = Ok(());
         for def in defs {
-            let resolved = def.name.and_then(|name| name.resolve_lhs(ctx));
-
-            let lhs: LhsReturn = match resolved {
+            let lhs: LhsReturn = match def.name.and_then(|name| name.resolve_lhs(ctx)) {
                 Some(result) => result,
                 None => {
                     ok = Err(CompileCompatError::CouldNotResolveLhs);
@@ -922,12 +919,7 @@ impl CompatInfo {
         let mut ok: Result<(), CompileCompatError> = Ok(());
 
         for var in def.body {
-            let lhs = match var.name {
-                None => None,
-                Some(name) => name.resolve_lhs(ctx),
-            };
-
-            let lhs = match lhs {
+            let lhs = match var.name.and_then(|name| name.resolve_lhs(ctx)) {
                 Some(lhs) => lhs,
                 None => {
                     ok = Err(CompileCompatError::CouldNotResolveLhs);

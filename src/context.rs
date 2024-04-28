@@ -142,35 +142,23 @@ impl Context {
     }
 
     fn get_default_rules(&self) -> String {
-        if self.use_environment_names {
-            match self.getenv("XKB_DEFAULT_RULES") {
-                Some(rules) => rules,
-                None => DEFAULT_XKB_RULES.into(),
-            }
-        } else {
-            DEFAULT_XKB_RULES.into()
-        }
+        self.use_environment_names
+            .then(|| self.getenv("XKB_DEFAULT_RULES"))
+            .flatten()
+            .unwrap_or(DEFAULT_XKB_RULES.into())
     }
 
     fn get_default_model(&self) -> String {
-        if self.use_environment_names {
-            match self.getenv("XKB_DEFAULT_MODEL") {
-                Some(rules) => rules,
-                None => DEFAULT_XKB_MODEL.into(),
-            }
-        } else {
-            DEFAULT_XKB_MODEL.into()
-        }
+        self.use_environment_names
+            .then(|| self.getenv("XKB_DEFAULT_MODEL"))
+            .flatten()
+            .unwrap_or(DEFAULT_XKB_MODEL.into())
     }
     fn get_default_layout(&self) -> String {
-        if self.use_environment_names {
-            match self.getenv("XKB_DEFAULT_LAYOUT") {
-                Some(rules) => rules,
-                None => DEFAULT_XKB_LAYOUT.into(),
-            }
-        } else {
-            DEFAULT_XKB_LAYOUT.into()
-        }
+        self.use_environment_names
+            .then(|| self.getenv("XKB_DEFAULT_LAYOUT"))
+            .flatten()
+            .unwrap_or(DEFAULT_XKB_LAYOUT.into())
     }
 
     fn get_default_variant(&self) -> String {
@@ -184,20 +172,13 @@ impl Context {
             env = self.getenv("XKB_DEFAULT_VARIANT");
         }
 
-        match env {
-            Some(env) => env,
-            None => DEFAULT_XKB_VARIANT.into(),
-        }
+        env.unwrap_or(DEFAULT_XKB_VARIANT.into())
     }
     fn get_default_options(&self) -> String {
-        if self.use_environment_names {
-            match self.getenv("XKB_DEFAULT_OPTIONS") {
-                Some(rules) => rules,
-                None => DEFAULT_XKB_OPTIONS.into(),
-            }
-        } else {
-            DEFAULT_XKB_OPTIONS.into()
-        }
+        self.use_environment_names
+            .then(|| self.getenv("XKB_DEFAULT_OPTIONS"))
+            .flatten()
+            .unwrap_or(DEFAULT_XKB_OPTIONS.into())
     }
 
     pub(crate) fn sanitize_rule_names(&self, rmlvo: &mut RuleNames) {
@@ -275,19 +256,13 @@ impl Context {
     }
 
     pub(crate) fn include_path_get_extra_path(&self) -> String {
-        let extra = self.getenv("XKB_CONFIG_EXTRA_PATH");
-        match extra {
-            Some(extra) => extra,
-            None => DFLT_XKB_CONFIG_EXTRA_PATH.to_string(),
-        }
+        self.getenv("XKB_CONFIG_EXTRA_PATH")
+            .unwrap_or_else(|| DFLT_XKB_CONFIG_EXTRA_PATH.to_string())
     }
 
     pub(crate) fn include_path_get_system_path(&self) -> String {
-        let root = self.getenv("XKB_CONFIG_ROOT");
-        match root {
-            Some(root) => root,
-            None => DFLT_XKB_CONFIG_ROOT.to_string(),
-        }
+        self.getenv("XKB_CONFIG_ROOT")
+            .unwrap_or_else(|| DFLT_XKB_CONFIG_ROOT.to_string())
     }
 
     /// Append the default include directories to the context.

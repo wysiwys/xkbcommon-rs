@@ -103,7 +103,7 @@ impl KeyNamesInfo {
             num_led_names: 0,
             name: None,
             key_names: std::collections::BTreeMap::new(),
-            led_names: [None; XKB_MAX_LEDS],
+            led_names: [None; XKB_MAX_LEDS], // TODO: better data structure
             aliases: vec![],
         }
     }
@@ -416,18 +416,20 @@ impl KeyNamesInfo {
             }
         }
 
-        let value: u32 = match stmt.value.try_into() {
-            Ok(v) if v < XKB_KEYCODE_MAX => v,
-            _ => {
+        let value: u32 = stmt
+            .value
+            .try_into()
+            .ok()
+            .filter(|v| *v < XKB_KEYCODE_MAX)
+            .ok_or_else(|| {
                 log::error!(
                     "Illegal keycode; {:?} must be between 0..{}
                     Key ignored",
                     stmt.value,
                     XKB_KEYCODE_MAX
                 );
-                return Err(CompileKeycodesError::IllegalKeycode(stmt.value));
-            }
-        };
+                CompileKeycodesError::IllegalKeycode(stmt.value)
+            })?;
 
         self.add_key_name(ctx, value, stmt.name, merge, false, true)
     }

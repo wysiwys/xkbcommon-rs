@@ -624,16 +624,13 @@ impl SymbolsInfo {
         for stmt in include.maps.iter() {
             // TODO: make sure the error message contains the file and/or depth
             //  See `process_include_file`
-            let file = match builder
+            let file = builder
                 .context
                 .process_include_file(stmt, XkbFileType::Symbols)
-            {
-                Ok(file) => file,
-                Err(e) => {
+                .map_err(|e| {
                     self.unrecoverable_error = Some(e.clone().into());
-                    return Err(e.into());
-                }
-            };
+                    e
+                })?;
 
             let mut next_incl = SymbolsInfo::new(
                 &mut builder.context,
@@ -711,10 +708,7 @@ impl KeyInfo {
 
             // make a new group at the end
             // and return its index
-            let next_idx = match self.groups.keys().max() {
-                Some(n) => n + 1,
-                None => 0,
-            };
+            let next_idx = self.groups.keys().max().map(|n| n + 1).unwrap_or(0);
 
             let groupi = GroupInfo::new();
             self.groups.insert(next_idx, groupi);
@@ -948,17 +942,15 @@ impl KeyInfo {
             return self.add_actions_to_key(ctx, mods, actions_info, array_ndx, value);
         } else if ["vmods", "virtualmods", "virtualmodifiers"].contains(&field_str) {
             let op = value.op_type();
-            self.vmodmap = match value.resolve_mod_mask(ctx, ModType::VIRT, mods) {
-                Some(mask) => mask,
-                None => {
+            self.vmodmap = value.resolve_mod_mask(ctx, ModType::VIRT, mods)
+                .ok_or_else(|| {
                     log::error!("{:?}: Expected a virtual modifier mask, found {:?}; Ignoring virtual modifiers definition for key {:?}",
                         XkbError::UnsupportedModifierMask,
                         op,
                         self.info_text(ctx));
 
-                    return Err(CompileSymbolsError::ExpectedVModMask);
-                }
-            };
+                    CompileSymbolsError::ExpectedVModMask
+                })?;
 
             self.defined |= KeyField::VMODMAP;
         } else if ["locking", "lock", "locks"].contains(&field_str) {
@@ -1062,32 +1054,25 @@ impl SymbolsInfo {
         array_ndx: Option<ExprDef>,
         value: ExprDef,
     ) -> Result<(), CompileSymbolsError> {
-        let array_ndx = array_ndx
+        let group = array_ndx
             .ok_or_else(|| {
-            let err = XkbWarning::MissingSymbolsGroupNameIndex;
-            log::warn!("{:?}: You must specify an index when specifying a group name; Group name definition without array subscript ignored", err);
+            log::warn!("{:?}: You must specify an index when specifying a group name; Group name definition without array subscript ignored", XkbWarning::MissingSymbolsGroupNameIndex);
             CompileSymbolsError::IndexUnspecified
-            })?;
-
-        let group = array_ndx.resolve_group(ctx)
+            })?
+        .resolve_group(ctx)
         .ok_or_else(|| {
-                let err = XkbError::UnsupportedGroupIndex;
-                log::error!("{:?}: Illegal index in group name definition; Definition with non-integer array index ignored",err);
+                log::error!("{:?}: Illegal index in group name definition; Definition with non-integer array index ignored",XkbError::UnsupportedGroupIndex);
                 CompileSymbolsError::IllegalIndexInGroupNameDef
             })?;
 
-        let name = match value.resolve_string(ctx) {
-            Some(name) => name,
-            None => {
-                let err = XkbError::WrongFieldType;
-                log::error!(
-                    "{:?}: Group name must be a string; Illegal name for group {} ignored",
-                    err,
-                    group
-                );
-                return Err(CompileSymbolsError::IllegalGroupName);
-            }
-        };
+        let name = value.resolve_string(ctx).ok_or_else(|| {
+            log::error!(
+                "{:?}: Group name must be a string; Illegal name for group {} ignored",
+                XkbError::WrongFieldType,
+                group
+            );
+            CompileSymbolsError::IllegalGroupName
+        })?;
 
         let group_to_use;
 
@@ -1115,12 +1100,10 @@ impl SymbolsInfo {
     ) -> Result<(), CompileSymbolsError> {
         let ret: Result<(), CompileSymbolsError>;
 
-        let lhs = match stmt.name {
-            Some(name) => name.resolve_lhs(ctx),
-            None => None,
-        };
-
-        let lhs = lhs.ok_or_else(|| CompileSymbolsError::CouldNotResolveLhs)?;
+        let lhs = stmt
+            .name
+            .and_then(|name| name.resolve_lhs(ctx))
+            .ok_or(CompileSymbolsError::CouldNotResolveLhs)?;
 
         let elem = lhs.elem.map(|e| e.to_lowercase());
         let field = lhs.field.to_lowercase();
@@ -1322,18 +1305,15 @@ impl SymbolsInfo {
 
         let ndx = match modifier_name {
             Some(n) if n.as_str() == "none" => None,
-            _ => {
-                let mod_ndx = self.mods.mod_name_to_index(def.modifier, ModType::REAL);
-                if mod_ndx.is_none() {
+            _ => self.mods.mod_name_to_index(def.modifier, ModType::REAL)
+                .ok_or_else(|| {
                     log::error!("{:?}: Illegal modifier map definition; Ignoring map for non-modifier \"{:?}\"",
                         XkbError::InvalidRealModifier,
                         ctx.xkb_atom_text(def.modifier)
                     );
-                    return Err(CompileSymbolsError::InvalidRealModifier);
-                }
-                mod_ndx
-            }
-        };
+                    CompileSymbolsError::InvalidRealModifier
+                })?.into()
+            };
 
         let mut ok = Ok(());
 
@@ -1356,10 +1336,7 @@ impl SymbolsInfo {
                     } else {
                         log::error!("{:?}: Modmap entries may contain only key names or keysyms; Illegal definition for {} modifier ignored",
                         XkbError::InvalidModmapEntry,
-                        match ndx {
-                            Some(ndx)
-                                => ctx.mod_index_text(&self.mods,ndx),
-                            None => ""});
+                        ndx.map(|ndx| ctx.mod_index_text(&self.mods, ndx)).unwrap_or(""));
 
                         continue;
                     }

@@ -157,8 +157,7 @@ pub(crate) struct IncludeStmtPart {
 pub(crate) struct IncludeStmt {
     //common: ParseCommon,
     pub(super) stmt: String,
-    pub(super) merge: MergeMode, // TODO: this is redundant and will match the first merge mode in
-    // the list
+    pub(super) merge: MergeMode,
     pub(super) maps: Vec<IncludeStmtPart>,
 }
 
@@ -181,7 +180,6 @@ impl IncludeStmt {
     }
 }
 
-// TODO: don't return `Decl` variants from `create`
 #[allow(dead_code)]
 pub(crate) enum Decl {
     //XkbFile(XkbFile),
@@ -693,9 +691,6 @@ impl ModMapDef {
     pub(crate) fn create(modifier: Atom, keys: Vec<ExprDef>) -> Result<Self, AstError> {
         let merge = MergeMode::default();
 
-        //TODO: what enum variant is ExprDef? Keysymlist?
-        // check this
-
         Ok(Self {
             merge,
             modifier,
@@ -798,7 +793,7 @@ impl XkbFile {
         //TODO: escape map name
         Self {
             file_type,
-            name: name.unwrap_or_else(|| "(unnamed)".to_owned()),
+            name: name.unwrap_or("(unnamed)".to_owned()),
             files,
             defs: defs.unwrap_or_else(Vec::new),
             flags,

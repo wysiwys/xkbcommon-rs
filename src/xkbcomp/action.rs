@@ -750,20 +750,16 @@ fn handle_switch_screen(
 
             // TODO: i8 or i16??
             // Report this as a bug if necessary
-            let val: i8 = match val.try_into() {
-                Ok(val) if val >= 1 => val,
-                _ => {
-                    let err = XkbMessageCode::NoId;
-                    log::error!(
-                        "{:?}: Screen index must be in the range 1..255;
+            let val: i8 = val.try_into().ok().filter(|i| *i >= 1).ok_or_else(|| {
+                log::error!(
+                    "{:?}: Screen index must be in the range 1..255;
                         Illegal screen value {:?} ignored.",
-                        err,
-                        val
-                    );
+                    XkbMessageCode::NoId,
+                    val
+                );
 
-                    return Err(HandleActionError::IllegalScreenIndex(val));
-                }
-            };
+                HandleActionError::IllegalScreenIndex(val)
+            })?;
 
             act.screen = match op {
                 Negate => Some(-val),
@@ -842,19 +838,14 @@ fn handle_private(
                 return Err(ctx.report_action_not_array(action_type, field).into());
             }
 
-            let _type = match value.resolve_integer(ctx) {
-                Some(v) => v,
-                None => {
-                    return Err(ctx
-                        .report_mismatch(
-                            XkbError::WrongFieldType.into(),
-                            &ActionType::Private,
-                            field,
-                            "integer",
-                        )
-                        .into())
-                }
-            };
+            let _type = value.resolve_integer(ctx).ok_or_else(|| {
+                ctx.report_mismatch(
+                    XkbError::WrongFieldType.into(),
+                    &ActionType::Private,
+                    field,
+                    "integer",
+                )
+            })?;
 
             let _type: u8 = _type.try_into().map_err(|_| {
                 let err = XkbMessageCode::NoId;
@@ -881,29 +872,23 @@ fn handle_private(
             return Ok(());
         } else if *field == ActionField::Data {
             if array_ndx.is_none() {
-                let val = match value.resolve_string(ctx) {
-                    Some(val) => val,
-                    None => {
-                        return Err(ctx
-                            .report_mismatch(
-                                XkbError::WrongFieldType.into(),
-                                &action.action_type(),
-                                field,
-                                "string",
-                            )
-                            .into())
-                    }
-                };
+                let val = value.resolve_string(ctx).ok_or_else(|| {
+                    ctx.report_mismatch(
+                        XkbError::WrongFieldType.into(),
+                        &action.action_type(),
+                        field,
+                        "string",
+                    )
+                })?;
 
                 let s = ctx.xkb_atom_text(val);
 
                 let data_size = std::mem::size_of::<ActionData>();
                 if s.is_empty() || s.len() > data_size {
-                    let err = XkbMessageCode::NoId;
                     log::warn!(
                         "{:?}: A private action has {} data bytes; 
                             Illegal data ignored",
-                        err,
+                        XkbMessageCode::NoId,
                         data_size
                     );
 
@@ -915,60 +900,50 @@ fn handle_private(
                 let ndx = array_ndx
                     .and_then(|i| i.resolve_integer(ctx))
                     .ok_or_else(|| {
-                        let err = XkbMessageCode::NoId;
                         log::error!(
                             "{:?}: Array subscript must be integer;
                             Illegal subscript ignored",
-                            err
+                            XkbMessageCode::NoId
                         );
                         HandleActionError::ArraySubscriptMustBeInt
                     })?;
 
-                let ndx: usize = match ndx.try_into() {
-                    Ok(ndx) if ndx < ACTION_DATA_LEN => ndx,
-                    _ => {
-                        let err = XkbMessageCode::NoId;
+                let ndx: usize = ndx
+                    .try_into()
+                    .ok()
+                    .filter(|i| *i < ACTION_DATA_LEN)
+                    .ok_or_else(|| {
                         log::error!(
                             "{:?}: The data for a private action has {} entries;
                             attempted to use data[{}] ignored",
-                            err,
+                            XkbMessageCode::NoId,
                             ACTION_DATA_LEN,
                             ndx
                         );
-                        return Err(HandleActionError::PrivateActionExceedMaxIndex {
+                        HandleActionError::PrivateActionExceedMaxIndex {
                             max: ACTION_DATA_LEN,
                             index: ndx,
-                        });
-                    }
-                };
+                        }
+                    })?;
 
-                let datum = match value.resolve_integer(ctx) {
-                    Some(datum) => datum,
-                    None => {
-                        return Err(ctx
-                            .report_mismatch(
-                                XkbError::WrongFieldType.into(),
-                                &act.action_type,
-                                field,
-                                "integer",
-                            )
-                            .into())
-                    }
-                };
+                let datum = value.resolve_integer(ctx).ok_or_else(|| {
+                    ctx.report_mismatch(
+                        XkbError::WrongFieldType.into(),
+                        &act.action_type,
+                        field,
+                        "integer",
+                    )
+                })?;
 
-                let datum: u8 = match datum.try_into() {
-                    Ok(datum) => datum,
-                    Err(_) => {
-                        let err = XkbMessageCode::NoId;
-                        log::error!(
-                            "{:?}: All data for a private action must 0..255;
+                let datum: u8 = datum.try_into().map_err(|_| {
+                    log::error!(
+                        "{:?}: All data for a private action must 0..255;
                             Illegal datum {} ignored",
-                            err,
-                            datum
-                        );
-                        return Err(HandleActionError::PrivateActionIllegalDatum(datum));
-                    }
-                };
+                        XkbMessageCode::NoId,
+                        datum
+                    );
+                    HandleActionError::PrivateActionIllegalDatum(datum)
+                })?;
 
                 act.data[ndx] = Some(datum);
                 return Ok(());

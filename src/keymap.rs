@@ -716,13 +716,10 @@ impl ModSet {
 
         let mods = names
             .iter()
-            .map(|name| {
-                let atom = ctx.atom_intern(name);
-                Mod {
-                    name: atom,
-                    mod_type: ModType::REAL,
-                    mapping: 0,
-                }
+            .map(|name| Mod {
+                name: ctx.atom_intern(name),
+                mod_type: ModType::REAL,
+                mapping: 0,
             })
             .collect();
         Self { mods }
@@ -759,7 +756,7 @@ pub struct Keymap {
     pub(crate) num_groups: usize,
     pub(crate) group_names: Vec<Atom>,
 
-    pub(crate) leds: [Option<Led>; XKB_MAX_LEDS],
+    pub(crate) leds: [Option<Led>; XKB_MAX_LEDS], // TODO: better data structure
 
     pub(crate) keycodes_section_name: Option<String>,
     pub(crate) symbols_section_name: Option<String>,
@@ -1011,74 +1008,67 @@ impl Keymap {
         self.mods.mods.len()
     }
 
-    pub fn mod_get_name(&self, idx: ModIndex) -> Option<String> {
-        let _mod = self.mods.mods.get(idx)?;
-
-        self.context.atom_text(_mod.name).map(|s| s.to_owned())
+    pub fn mod_get_name(&self, idx: ModIndex) -> Option<&str> {
+        self.mods
+            .mods
+            .get(idx)
+            .and_then(|_mod| self.context.atom_text(_mod.name))
     }
 
     pub fn mod_get_index(&self, name: impl AsRef<str>) -> Option<ModIndex> {
-        let atom = self.context.atom_lookup(name.as_ref())?;
-
-        self.mods.mod_name_to_index(atom, ModType::BOTH)
+        self.context
+            .atom_lookup(name.as_ref())
+            .and_then(|atom| self.mods.mod_name_to_index(atom, ModType::BOTH))
     }
 
     pub fn num_layouts(&self) -> LayoutIndex {
         self.num_groups
     }
 
-    pub fn layout_get_name(&self, idx: LayoutIndex) -> Option<String> {
-        let name = self.group_names.get(idx)?;
-
-        self.context.atom_text(*name).map(|s| s.to_owned())
+    pub fn layout_get_name(&self, idx: LayoutIndex) -> Option<&str> {
+        self.group_names
+            .get(idx)
+            .and_then(|name| self.context.atom_text(*name))
     }
 
     pub fn layout_get_index(&self, name: impl AsRef<str>) -> Option<LayoutIndex> {
-        let atom = self.context.atom_lookup(name.as_ref())?;
-
-        self.group_names.iter().position(|n| *n == atom)
+        self.context
+            .atom_lookup(name.as_ref())
+            .and_then(|atom| self.group_names.iter().position(|n| *n == atom))
     }
 
     pub fn num_layouts_for_key(&self, kc: impl Into<RawKeycode>) -> Option<LayoutIndex> {
-        let key = self.xkb_key(kc.into())?;
-
-        Some(key.groups.len())
+        self.xkb_key(kc.into()).map(|key| key.groups.len())
     }
 
     pub fn num_levels_for_key(&self, kc: impl Into<RawKeycode>, layout: LayoutIndex) -> LevelIndex {
-        let key = match self.xkb_key(kc.into()) {
-            Some(key) => key,
-            None => return 0,
-        };
+        let num_levels = || -> Option<_> {
+            let key = self.xkb_key(kc.into())?;
 
-        let layout: i32 = match layout.try_into() {
-            Ok(layout) => layout,
-            _ => return 0,
-        };
+            let layout: usize = layout.try_into().ok().and_then(|layout: i32| {
+                crate::state::wrap_group_into_range(
+                    layout,
+                    key.groups.len(),
+                    &key.out_of_range_group_action,
+                    &key.out_of_range_group_number,
+                )
+            })?;
 
-        let layout = crate::state::wrap_group_into_range(
-            layout,
-            key.groups.len(),
-            &key.out_of_range_group_action,
-            &key.out_of_range_group_number,
-        );
+            key.num_levels(layout, self).ok()
+        }();
 
-        let layout = match layout {
-            Some(layout) => layout,
-            None => return 0,
-        };
-
-        key.num_levels(layout, self).unwrap_or(0)
+        num_levels.unwrap_or(0)
     }
 
     pub fn num_leds(&self) -> LedIndex {
         self.leds.len()
     }
 
-    pub fn led_get_name(&self, idx: LedIndex) -> Option<String> {
-        let led = self.leds.get(idx)?.as_ref()?;
-
-        self.context.atom_text(led.name?).map(|s| s.into())
+    pub fn led_get_name(&self, idx: LedIndex) -> Option<&str> {
+        self.leds
+            .get(idx)?
+            .as_ref()
+            .and_then(|led| self.context.atom_text(led.name?))
     }
 
     pub fn led_get_index(&self, name: impl AsRef<str>) -> Option<LedIndex> {
@@ -1096,18 +1086,16 @@ impl Keymap {
         level: LevelIndex,
         masks_size: usize,
     ) -> Option<Vec<ModMask>> {
-        let mut masks_out = vec![];
-
         let key = self.xkb_key(kc.into())?;
 
-        let layout: i32 = layout.try_into().ok()?;
-
-        let layout = crate::state::wrap_group_into_range(
-            layout,
-            key.groups.len(),
-            &key.out_of_range_group_action,
-            &key.out_of_range_group_number,
-        )?;
+        let layout: usize = layout.try_into().ok().and_then(|layout: i32| {
+            crate::state::wrap_group_into_range(
+                layout,
+                key.groups.len(),
+                &key.out_of_range_group_action,
+                &key.out_of_range_group_number,
+            )
+        })?;
 
         if level >= key.groups.get(layout)?.levels.len() {
             return None;
@@ -1116,6 +1104,7 @@ impl Keymap {
         let _type = key.groups.get(layout)?.key_type;
 
         let mut count = 0;
+        let mut masks_out = vec![];
 
         if level == 0 {
             let mut empty_mapped = false;
@@ -1155,7 +1144,7 @@ impl Keymap {
     pub fn key_get_syms_by_level(
         &self,
         kc: impl Into<RawKeycode>,
-        layout_idx_orig: LayoutIndex,
+        layout_idx: LayoutIndex,
         level: LevelIndex,
     ) -> Result<Vec<Keysym>, KeyGetSymsByLevelError> {
         let kc = kc.into();
@@ -1163,37 +1152,27 @@ impl Keymap {
             .xkb_key(kc)
             .ok_or(KeyGetSymsByLevelError::NoKeyForKeycode(Keycode(kc)))?;
 
-        let layout_idx = layout_idx_orig
+        let group = layout_idx
             .try_into()
-            .map_err(|_| KeyGetSymsByLevelError::InvalidLayoutIndex(layout_idx_orig))?;
+            .ok()
+            .and_then(|layout: i32| {
+                crate::state::wrap_group_into_range(
+                    layout,
+                    key.groups.len(),
+                    &key.out_of_range_group_action,
+                    &key.out_of_range_group_number,
+                )
+            })
+            .and_then(|layout| key.groups.get(layout))
+            .ok_or(KeyGetSymsByLevelError::InvalidLayoutIndex(layout_idx))?;
 
-        let layout = crate::state::wrap_group_into_range(
-            layout_idx,
-            key.groups.len(),
-            &key.out_of_range_group_action,
-            &key.out_of_range_group_number,
-        );
-
-        let layout = layout.ok_or(KeyGetSymsByLevelError::InvalidLayoutIndex(layout_idx_orig))?;
-
-        let num_levels = key
-            .num_levels(layout, self)
-            .expect("Could not get levels for this layout");
-
-        if level >= num_levels {
-            return Err(KeyGetSymsByLevelError::InvalidLevelIndex(level));
-        }
-
-        let level = key
-            .groups
-            .get(layout)
-            .ok_or(KeyGetSymsByLevelError::InvalidLayoutIndex(layout))?
+        let level = group
             .levels
             .get(level)
             .ok_or(KeyGetSymsByLevelError::InvalidLevelIndex(level))?;
 
         // TODO: is this correct?
-        let syms_at_level = level.syms.clone().into_iter().flatten().collect();
+        let syms_at_level = level.syms.iter().flatten().copied().collect();
 
         Ok(syms_at_level)
     }
@@ -1214,46 +1193,33 @@ impl Keymap {
         self.keys.keys()
     }
 
-    pub fn key_get_name(&self, kc: impl Into<RawKeycode>) -> Option<String> {
-        let key = self.xkb_key(kc.into())?;
-
-        self.context.atom_text(key.name).map(|s| s.to_string())
+    pub fn key_get_name(&self, kc: impl Into<RawKeycode>) -> Option<&str> {
+        self.xkb_key(kc.into())
+            .and_then(|key| self.context.atom_text(key.name))
     }
 
     pub fn key_by_name(&self, name: impl AsRef<str>) -> Option<Keycode> {
-        let mut atom = self.context.atom_lookup(name.as_ref());
+        // try to resolve key alias first, or use plain name
+        let atom = self
+            .context
+            .atom_lookup(name.as_ref())
+            .and_then(|atom| self.resolve_key_alias(atom).or(Some(atom)))?;
 
-        if let Some(atom_r) = atom {
-            let ratom = self.resolve_key_alias(atom_r);
-            if let Some(ratom) = ratom {
-                atom = Some(ratom);
-            }
-        }
-
-        let atom = atom?;
-
-        for (kc, key) in self.keys.iter() {
-            if key.name == atom {
-                return Some(Keycode::new(*kc));
-            }
-        }
-
-        None
+        self.keys
+            .iter()
+            .find(|(_, key)| key.name == atom)
+            .map(|(kc, _)| Keycode::new(*kc))
     }
 
     pub fn key_repeats(&self, kc: impl Into<RawKeycode>) -> bool {
-        let key = self.xkb_key(kc.into());
-
-        match key {
-            Some(key) => key.repeats,
-            None => false,
-        }
+        self.xkb_key(kc.into()).map(|k| k.repeats).unwrap_or(false)
     }
 
     fn resolve_key_alias(&self, name: Atom) -> Option<Atom> {
-        let alias = self.key_aliases.iter().find(|alias| alias.alias == name)?;
-
-        Some(alias.real.to_owned())
+        self.key_aliases
+            .iter()
+            .find(|alias| alias.alias == name)
+            .map(|a| a.real.to_owned())
     }
 }
 
@@ -1262,14 +1228,11 @@ impl KeymapBuilder<TextV1> {
     // Keymap struct that is also
     // needed by the KeymapBuilder
     pub(crate) fn resolve_key_alias(&self, name: Atom) -> Option<Atom> {
-        let key_aliases = match self.key_aliases.as_ref() {
-            Some(v) => v,
-            None => return None,
-        };
-
-        let alias = key_aliases.iter().find(|alias| alias.alias == name)?;
-
-        Some(alias.real.to_owned())
+        self.key_aliases
+            .as_ref()?
+            .iter()
+            .find(|alias| alias.alias == name)
+            .map(|alias| alias.real)
     }
 
     // corresponds to XkbKeyByName
@@ -1278,21 +1241,22 @@ impl KeymapBuilder<TextV1> {
         name: Atom,
         use_aliases: bool,
     ) -> Option<&mut KeyBuilder> {
-        let result = self
+        let kc = self
             .keys
             .iter()
             .find(|(_, k)| k.name == name)
-            .map(|(kc, _)| *kc);
+            .or_else(|| {
+                // If use_aliases, check for key's aliases
+                // and then search in keys for matching key
+                use_aliases.then(|| {
+                    let new_name = self.resolve_key_alias(name)?;
 
-        match result {
-            Some(kc) => self.keys.get_mut(&kc),
-            None if use_aliases => {
-                let new_name = self.resolve_key_alias(name)?;
+                    self.keys.iter().find(|(_, k)| k.name == new_name)
+                })?
+            })
+            .map(|(kc, _)| *kc)?;
 
-                self.get_key_by_name_mut(new_name, false)
-            }
-            _ => None,
-        }
+        self.keys.get_mut(&kc)
     }
 }
 

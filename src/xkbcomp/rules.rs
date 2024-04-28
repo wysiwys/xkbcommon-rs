@@ -307,14 +307,11 @@ impl<'c> Matcher<'c> {
     }
 
     fn group_add_element(&mut self, element: &str) -> Result<(), MatcherError> {
-        let group = self.groups.iter_mut().last();
-
-        match group {
-            Some(group) => group.elements.push(element.to_owned()),
-            None => return Err(MatcherError::NoGroupAvailable),
-        }
-
-        Ok(())
+        self.groups
+            .iter_mut()
+            .last()
+            .map(|g| g.elements.push(element.to_owned()))
+            .ok_or(MatcherError::NoGroupAvailable)
     }
 
     fn include(&mut self, include_depth: usize, inc: &str) -> Result<(), MatcherError> {
@@ -658,10 +655,10 @@ impl<'c> Matcher<'c> {
                 current_ch = chars.next().map(|(_, ch)| ch);
                 continue;
             }
-            ch = match chars.next() {
-                Some((_, ch)) => ch,
-                None => return Err(MatcherError::LexerEarlyEOF),
-            };
+            ch = chars
+                .next()
+                .map(|(_, ch)| ch)
+                .ok_or(MatcherError::LexerEarlyEOF)?;
 
             let mut prefix = None;
             let mut suffix = None;
@@ -672,10 +669,10 @@ impl<'c> Matcher<'c> {
                 if '(' == ch {
                     suffix = Some(')');
                 }
-                ch = match chars.next() {
-                    Some((_, ch)) => ch,
-                    None => return Err(MatcherError::LexerEarlyEOF),
-                };
+                ch = chars
+                    .next()
+                    .map(|(_, ch)| ch)
+                    .ok_or(MatcherError::LexerEarlyEOF)?;
             }
 
             // Mandatory model/layout/variant specifier
@@ -688,44 +685,38 @@ impl<'c> Matcher<'c> {
 
             // Check for index
             let mut index = None;
-            if let Some((i, mut ch)) = chars.next() {
-                if ch == '[' {
-                    if mlv != RulesMlvo::Layout && mlv != RulesMlvo::Variant {
-                        log::error!(
-                            "invalid index in %-expansion; may only index layout or variant"
-                        );
-                        return Err(MatcherError::LexerInvalidIndex);
-                    }
+            let (i, mut ch) = chars.next().ok_or(MatcherError::LexerEarlyEOF)?;
 
-                    let (idx, consumed) = match extract_layout_index(&value[i..]) {
-                        Some(c) => c,
-                        None => return Err(MatcherError::LexerCouldNotExtractLayoutIndex),
-                    };
+            if ch == '[' {
+                if mlv != RulesMlvo::Layout && mlv != RulesMlvo::Variant {
+                    log::error!("invalid index in %-expansion; may only index layout or variant");
+                    return Err(MatcherError::LexerInvalidIndex);
+                }
 
-                    index = Some(idx);
+                let (idx, consumed) = extract_layout_index(&value[i..])
+                    .ok_or(MatcherError::LexerCouldNotExtractLayoutIndex)?;
 
-                    for _ in 0..consumed {
-                        // i not assigned here because marked unused by Rust compiler
-                        (_, ch) = chars.next().unwrap();
-                        current_ch = Some(ch);
-                    }
-                } else {
+                index = Some(idx);
+
+                for _ in 0..consumed {
+                    // i not assigned here because marked unused by Rust compiler
+                    (_, ch) = chars.next().unwrap();
                     current_ch = Some(ch);
                 }
-
-                // Check for suffix, if there is supposed to be one
-                if let Some(sfx) = suffix {
-                    if current_ch != Some(sfx) {
-                        return match current_ch {
-                            Some(c) => Err(MatcherError::LexerUnexpectedChar(c)),
-                            None => Err(MatcherError::LexerEarlyEOF),
-                        };
-                    }
-
-                    current_ch = chars.next().map(|(_, ch)| ch);
-                }
             } else {
-                return Err(MatcherError::LexerEarlyEOF);
+                current_ch = Some(ch);
+            }
+
+            // Check for suffix, if there is supposed to be one
+            if let Some(sfx) = suffix {
+                if current_ch != Some(sfx) {
+                    return match current_ch {
+                        Some(c) => Err(MatcherError::LexerUnexpectedChar(c)),
+                        None => Err(MatcherError::LexerEarlyEOF),
+                    };
+                }
+
+                current_ch = chars.next().map(|(_, ch)| ch);
             }
 
             // Get the expanded value

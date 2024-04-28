@@ -92,24 +92,24 @@ impl ExprDef {
             }
             ExprDef::ArrayRef(ar) => {
                 // return None if:
-                //  - ar.elem is Some && elem is None
+                //  - ar.elem is Some && elem's text is None
                 //  - field is None
 
                 let elem = match ar.element {
-                    Some(elem) => Some(ctx.atom_text(elem)?).map(|s| s.into()),
+                    Some(elem) => Some(ctx.atom_text(elem)?),
                     None => None,
                 };
 
                 let field = ctx.atom_text(ar.field)?.into();
 
                 Some(LhsReturn {
-                    elem,
+                    elem: elem.map(|s| s.to_owned()),
                     field,
                     index: Some(*ar.entry),
                 })
             }
             other => {
-                log::error!("Unexpected operator in ResolveLhs: {:?}", other.op_type());
+                log::error!("Unexpected operator in resolve_lhs: {:?}", other.op_type());
                 None
             }
         }
@@ -693,10 +693,7 @@ impl ExprDef {
             }
         }
 
-        let val = match self.resolve_integer(ctx) {
-            Some(val) => val,
-            None => return None,
-        };
+        let val = self.resolve_integer(ctx)?;
 
         if val < XKB_KEYSYM_MIN.into() {
             log::warn!(
