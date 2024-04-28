@@ -1140,31 +1140,26 @@ impl Keymap {
 
         Some(masks_out)
     }
-
-    pub fn key_get_syms_by_level(
+}
+impl Key {
+    pub(crate) fn get_syms_by_level(
         &self,
-        kc: impl Into<RawKeycode>,
-        layout_idx: LayoutIndex,
+        layout: LayoutIndex,
         level: LevelIndex,
     ) -> Result<Vec<Keysym>, KeyGetSymsByLevelError> {
-        let kc = kc.into();
-        let key = self
-            .xkb_key(kc)
-            .ok_or(KeyGetSymsByLevelError::NoKeyForKeycode(Keycode(kc)))?;
-
-        let group = layout_idx
+        let group = layout
             .try_into()
             .ok()
             .and_then(|layout: i32| {
                 crate::state::wrap_group_into_range(
                     layout,
-                    key.groups.len(),
-                    &key.out_of_range_group_action,
-                    &key.out_of_range_group_number,
+                    self.groups.len(),
+                    &self.out_of_range_group_action,
+                    &self.out_of_range_group_number,
                 )
             })
-            .and_then(|layout| key.groups.get(layout))
-            .ok_or(KeyGetSymsByLevelError::InvalidLayoutIndex(layout_idx))?;
+            .and_then(|layout| self.groups.get(layout))
+            .ok_or(KeyGetSymsByLevelError::InvalidLayoutIndex(layout))?;
 
         let level = group
             .levels
@@ -1175,6 +1170,21 @@ impl Keymap {
         let syms_at_level = level.syms.iter().flatten().copied().collect();
 
         Ok(syms_at_level)
+    }
+}
+impl Keymap {
+    pub fn key_get_syms_by_level(
+        &self,
+        kc: impl Into<RawKeycode>,
+        layout: LayoutIndex,
+        level: LevelIndex,
+    ) -> Result<Vec<Keysym>, KeyGetSymsByLevelError> {
+        let kc = kc.into();
+        let key = self
+            .xkb_key(kc)
+            .ok_or(KeyGetSymsByLevelError::NoKeyForKeycode(Keycode(kc)))?;
+
+        key.get_syms_by_level(layout, level)
     }
 
     pub fn min_keycode(&self) -> Keycode {

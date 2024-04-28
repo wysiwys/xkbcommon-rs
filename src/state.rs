@@ -197,8 +197,6 @@ impl Filter {
         direction: KeyDirection,
         inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
-        // TODO: the filter search happens a bit too often
-
         use FilterFunc::*;
         match self
             .func
@@ -337,19 +335,22 @@ impl KeyType {
     }
 }
 
-impl State {
+impl Keymap {
     fn get_entry_for_key_state<'e>(
         &'e self,
         key: &Key,
         group: LayoutIndex,
+        inner_state: &InnerState,
     ) -> Option<&'e KeyTypeEntry> {
         let type_index = key.groups.get(group)?.key_type;
-        let _type = self.keymap.types.get(type_index)?;
-        let active_mods = self.inner_state.components.mods & _type.mods.mask;
+        let _type = self.types.get(type_index)?;
+        let active_mods = inner_state.components.mods & _type.mods.mask;
 
         _type.get_entry_for_mods(&active_mods)
     }
+}
 
+impl State {
     /// Returns the level to use for the given key and state
     ///
     /// Returns `None` if invalid.
@@ -360,16 +361,26 @@ impl State {
     ) -> Option<LevelIndex> {
         let key = self.keymap.xkb_key(kc.into())?;
 
-        if layout >= key.groups.len() {
+        key.get_level(layout, &self.keymap, &self.inner_state)
+    }
+}
+
+impl Key {
+    fn get_level(
+        &self,
+        layout: LayoutIndex,
+        keymap: &Keymap,
+        inner_state: &InnerState,
+    ) -> Option<LevelIndex> {
+        if layout >= self.groups.len() {
             return None;
         }
 
         // If we don't find an explicit match, the default is 0.
-        let level = self
-            .get_entry_for_key_state(key, layout)
+        keymap
+            .get_entry_for_key_state(self, layout, inner_state)
             .map(|entry| entry.level)
-            .unwrap_or(0);
-        Some(level)
+            .or(Some(0))
     }
 }
 
@@ -427,24 +438,24 @@ impl State {
     pub fn key_get_layout(&self, kc: impl Into<RawKeycode>) -> Option<LayoutIndex> {
         let key = self.keymap.xkb_key(kc.into())?;
 
+        key.get_layout(&self.inner_state)
+    }
+}
+
+impl Key {
+    fn get_layout(&self, inner_state: &InnerState) -> Option<LayoutIndex> {
         wrap_group_into_range(
-            self.inner_state.components.group.try_into().unwrap(),
-            key.groups.len(),
-            &key.out_of_range_group_action,
-            &key.out_of_range_group_number,
+            inner_state.components.group.try_into().unwrap(),
+            self.groups.len(),
+            &self.out_of_range_group_action,
+            &self.out_of_range_group_number,
         )
     }
+}
 
-    fn key_get_action(&self, kc: RawKeycode) -> Option<&Action> {
-        // Changed to use kc for borrow reasons
-        // TODO: avoid these repeat `get`s
-
-        let layout = self.key_get_layout(kc)?;
-
-        let level = self.key_get_level(kc, layout)?;
-        let key = self.keymap.xkb_key(kc)?;
-
-        let action = &key.groups.get(layout)?.levels.get(level)?.action;
+impl Key {
+    fn get_action(&self, layout: LayoutIndex, level: LevelIndex) -> Option<&Action> {
+        let action = &self.groups.get(layout)?.levels.get(level)?.action;
 
         // TODO: return None if ActionType::None?
         Some(action)
@@ -539,14 +550,12 @@ impl Filter {
 
         self._priv = FilterData::Group(base_group);
 
-        if self
-            .group_action()?
-            .flags
-            .intersects(ActionFlags::AbsoluteSwitch)
-        {
-            inner_state.components.base_group = self.group_action()?.group.unwrap_or(0);
-        } else {
-            inner_state.components.base_group += self.group_action()?.group.unwrap_or(0);
+        let action = self.group_action()?;
+        if action.flags.intersects(ActionFlags::AbsoluteSwitch) {
+            inner_state.components.base_group = action.group.unwrap_or(0);
+        } else if let Some(group) = action.group {
+            // TODO: why?
+            inner_state.components.base_group += group;
         }
 
         Ok(())
@@ -595,8 +604,8 @@ impl Filter {
 
         if group_action.flags.intersects(ActionFlags::AbsoluteSwitch) {
             inner_state.components.locked_group = group_action.group.unwrap_or(0);
-        } else {
-            inner_state.components.locked_group += group_action.group.unwrap_or(0);
+        } else if let Some(group) = group_action.group {
+            inner_state.components.locked_group += group;
         }
 
         Ok(())
@@ -877,15 +886,17 @@ impl State {
         // First run through all the currently active filters
         // and see if any of them have consumed this event.
         // TODO: remove redundancy
-        let layout = self.key_get_layout(kc).expect("Key has no valid layout");
-        let level = self
-            .key_get_level(kc, layout)
-            .expect("Key has no valid level");
-
         let key = self
             .keymap
             .xkb_key(kc)
             .ok_or(InternalStateError::NoSuchKey)?;
+
+        let layout = key
+            .get_layout(&self.inner_state)
+            .expect("Key has no valid layout");
+        let level = key
+            .get_level(layout, &self.keymap, &self.inner_state)
+            .expect("Key has no valid level");
 
         // apply all the filters and see if any were consumed
         let consumed = self
@@ -904,7 +915,7 @@ impl State {
             return Ok(());
         }
 
-        let action = match self.key_get_action(kc) {
+        let action = match key.get_action(layout, level) {
             Some(action) => action.clone(),
             None => return Ok(()),
         };
@@ -1241,24 +1252,23 @@ impl State {
     ///
     /// This function does not perform any keysym transformations.
     pub fn key_get_syms(&self, kc: impl Into<RawKeycode>) -> Vec<Keysym> {
-        let kc_raw = kc.into();
-
-        let layout = match self.key_get_layout(kc_raw) {
-            Some(layout) => layout,
-            None => return vec![],
-        };
-
-        let level = match self.key_get_level(kc_raw, layout) {
-            Some(layout) => layout,
-            None => return vec![],
-        };
-
-        match self.keymap.key_get_syms_by_level(kc_raw, layout, level) {
-            Ok(syms) => syms,
-            _ => vec![],
-        }
+        self.keymap
+            .xkb_key(kc.into())
+            .and_then(|key| key.get_syms(&self.keymap, &self.inner_state))
+            .unwrap_or(vec![])
     }
+}
 
+impl Key {
+    fn get_syms(&self, keymap: &Keymap, inner_state: &InnerState) -> Option<Vec<Keysym>> {
+        let layout = self.get_layout(inner_state)?;
+
+        let level = self.get_level(layout, keymap, inner_state)?;
+
+        self.get_syms_by_level(layout, level).ok()
+    }
+}
+impl State {
     fn should_do_caps_transformation(&self, kc: RawKeycode) -> bool {
         let caps = match self.keymap.mod_get_index(ModName::CAPS.name()) {
             Some(caps) => caps,
@@ -1346,36 +1356,32 @@ impl State {
     // but it is enabled by default
 
     fn get_one_sym_for_string(&self, kc: RawKeycode) -> Option<Keysym> {
-        let layout = self.key_get_layout(kc)?;
+        let key = self.keymap.xkb_key(kc)?;
 
-        let num_layouts = match self.keymap.num_layouts_for_key(Keycode::from(kc)) {
-            Some(n) if n != 0 => n,
-            _ => return None,
-        };
+        let layout = key.get_layout(&self.inner_state)?;
 
-        let level = self.key_get_level(kc, layout)?;
-
-        let syms = match self
+        let num_layouts = self
             .keymap
-            .key_get_syms_by_level(Keycode::new(kc), layout, level)
-        {
-            Ok(syms) if syms.len() == 1 => syms,
-            _ => return None,
-        };
+            .num_layouts_for_key(Keycode::from(kc))
+            .filter(|n| *n != 0)?;
+
+        let level = key.get_level(layout, &self.keymap, &self.inner_state)?;
+
+        let syms = key
+            .get_syms_by_level(layout, level)
+            .ok()
+            .filter(|syms| syms.len() == 1)?;
 
         let mut sym = syms[0];
 
         if self.should_do_ctrl_transformation(kc) && sym > 127.into() {
             for i in 0..num_layouts {
-                let level = match self.key_get_level(kc, i) {
+                let level = match key.get_level(i, &self.keymap, &self.inner_state) {
                     Some(level) => level,
                     None => continue,
                 };
 
-                if let Ok(syms) = self
-                    .keymap
-                    .key_get_syms_by_level(Keycode::new(kc), i, level)
-                {
+                if let Ok(syms) = key.get_syms_by_level(i, level) {
                     if syms.len() == 1 && syms[0] <= 127.into() {
                         sym = syms[0];
                         break;
@@ -1605,11 +1611,10 @@ impl State {
         _type: StateComponent,
     ) -> Result<bool, ModIsActiveError> {
         let name: &str = name.as_ref();
-        let idx = match self.keymap.mod_get_index(name) {
-            Some(idx) => idx,
-            // TODO: rename to InvalidModifier
-            None => return Err(ModIsActiveError::NoSuchModName(name.to_string())),
-        };
+        let idx = self
+            .keymap
+            .mod_get_index(name)
+            .ok_or(ModIsActiveError::NoSuchModName(name.to_string()))?;
 
         self.mod_index_is_active(idx, _type)
     }
@@ -1690,13 +1695,12 @@ impl State {
     /// If multiple layouts in the keymap have this name, the one with the lowest index is tested.
     pub fn layout_name_is_active(
         &self,
-        name: &str,
+        name: impl AsRef<str>,
         _type: StateComponent,
     ) -> Result<bool, LayoutIsActiveError> {
-        let idx = match self.keymap.layout_get_index(name) {
-            None => return Err(LayoutIsActiveError::NoSuchLayoutName(name.into())),
-            Some(idx) => idx,
-        };
+        let idx = self.keymap.layout_get_index(name.as_ref()).ok_or(
+            LayoutIsActiveError::NoSuchLayoutName(name.as_ref().to_string()),
+        )?;
 
         self.layout_index_is_active(idx, _type)
     }
@@ -1727,23 +1731,29 @@ impl State {
 
         self.led_index_is_active(idx)
     }
+}
 
-    fn key_get_consumed(&self, key: &Key, mode: ConsumedMode) -> ModMask {
+impl Key {
+    fn get_consumed(
+        &self,
+        mode: ConsumedMode,
+        keymap: &Keymap,
+        inner_state: &InnerState,
+    ) -> ModMask {
         let mut preserve: ModMask = 0;
         let mut consumed: ModMask = 0;
 
-        let group = match self.key_get_layout(key.keycode.raw()) {
+        let group = match self.get_layout(inner_state) {
             Some(g) => g,
             None => return 0,
         };
 
-        let _type = self
-            .keymap
+        let _type = keymap
             .types
-            .get(key.groups[group].key_type)
+            .get(self.groups[group].key_type)
             .expect("Could not retrieve type for key");
 
-        let matching_entry = self.get_entry_for_key_state(key, group);
+        let matching_entry = keymap.get_entry_for_key_state(self, group, inner_state);
         if let Some(entry) = matching_entry {
             preserve = entry.preserve.mask;
         }
@@ -1751,19 +1761,14 @@ impl State {
         match mode {
             ConsumedMode::Xkb => consumed = _type.mods.mask,
             ConsumedMode::Gtk => {
-                let no_mods_entry = _type.get_entry_for_mods(&0);
-                let no_mods_leveli = match no_mods_entry {
-                    Some(e) => e.level,
-                    None => 0,
-                };
-                let no_mods_level = &key.groups[group].levels[no_mods_leveli];
+                let no_mods_leveli = _type
+                    .get_entry_for_mods(&0)
+                    .map(|entry| entry.level)
+                    .unwrap_or(0);
+                let no_mods_level = &self.groups[group].levels[no_mods_leveli];
 
-                for entry in _type.entries.iter() {
-                    if !entry.is_active() {
-                        continue;
-                    }
-
-                    let level = &key.groups[group].levels[entry.level];
+                for entry in _type.entries.iter().filter(|entry| entry.is_active()) {
+                    let level = &self.groups[group].levels[entry.level];
                     if level.same_syms(no_mods_level) {
                         continue;
                     }
@@ -1778,7 +1783,9 @@ impl State {
 
         consumed & !preserve
     }
+}
 
+impl State {
     /// Test whether a modifier is consumed by keyboard state translation for a key.
     pub fn mod_index_is_consumed2(
         &self,
@@ -1795,7 +1802,7 @@ impl State {
             .xkb_key(kc)
             .ok_or(ModIndexIsConsumedError::NoSuchKeyAtKeycode(Keycode(kc)))?;
 
-        let mask = (1 << idx) & self.key_get_consumed(key, mode);
+        let mask = (1 << idx) & key.get_consumed(mode, &self.keymap, &self.inner_state);
 
         Ok(mask > 0)
     }
@@ -1813,12 +1820,10 @@ impl State {
     ///
     #[deprecated = "Use State::get_consumed_mods2() instead"]
     pub fn mod_mask_remove_consumed(&self, kc: impl Into<RawKeycode>, mask: ModMask) -> ModMask {
-        let key = match self.keymap.xkb_key(kc.into()) {
-            Some(key) => key,
-            None => return 0,
-        };
-
-        mask & !self.key_get_consumed(key, ConsumedMode::Xkb)
+        self.keymap
+            .xkb_key(kc.into())
+            .map(|key| mask & !key.get_consumed(ConsumedMode::Xkb, &self.keymap, &self.inner_state))
+            .unwrap_or(0)
     }
 
     /// Get the mask of modifiers consumed by translating a given key.
@@ -1831,12 +1836,10 @@ impl State {
     /// Returns a mask of the consumed modifiers.
     pub fn key_get_consumed_mods2(&self, kc: impl Into<RawKeycode>, mode: ConsumedMode) -> ModMask {
         // default case for unrecognized consumed modifiers mode
-        let key = match self.keymap.xkb_key(kc.into()) {
-            Some(key) => key,
-            None => return 0,
-        };
-
-        self.key_get_consumed(key, mode)
+        self.keymap
+            .xkb_key(kc.into())
+            .map(|key| key.get_consumed(mode, &self.keymap, &self.inner_state))
+            .unwrap_or(0)
     }
 
     /// Same as [State::key_get_consumed_mods2()] with mode [ConsumedMode::Xkb]
