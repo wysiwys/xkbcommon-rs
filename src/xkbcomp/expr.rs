@@ -53,7 +53,7 @@ use crate::context::Context;
 
 use crate::xkbcomp::ast::*;
 
-use crate::keymap::{ModSet, ModType, MOD_REAL_MASK_ALL, XKB_MAX_GROUPS};
+use crate::keymap::{ActionControls, ModSet, ModType, MOD_REAL_MASK_ALL, XKB_MAX_GROUPS};
 use crate::keysyms::*;
 use crate::rust_xkbcommon::*;
 use crate::text::*;
@@ -494,14 +494,7 @@ impl ExprDef {
     where
         F: Copy + FnOnce(I, ExprValueType, &Context) -> Option<T>,
         I: std::convert::TryFrom<usize> + std::convert::TryInto<usize>,
-        <I as TryFrom<usize>>::Error: std::fmt::Debug,
-        T: std::ops::Not<Output = T>
-            + std::ops::BitAnd<Output = T>
-            + std::ops::BitOr<Output = T>
-            + std::convert::TryFrom<i64>
-            + std::convert::TryInto<i64>,
-        <T as TryFrom<i64>>::Error: std::fmt::Debug,
-        <T as TryInto<i64>>::Error: std::fmt::Debug,
+        T: MaskInteger,
     {
         // This function iterates through the different types of ExprOp, and applies the
         // supplied lookup function accordingly.
@@ -511,7 +504,7 @@ impl ExprDef {
         match self {
             ExprDef::Integer(i) if i.op == Value => {
                 // TODO: ensure non-negative?
-                Some(i.ival.try_into().unwrap())
+                Some(i.ival.try_into().ok()?)
             }
             expr if expr.op_type() == Value => {
                 log::error!(
@@ -522,7 +515,7 @@ impl ExprDef {
                 None
             }
             ExprDef::Ident(ident) => {
-                let value = lookup(ident.ident.try_into().unwrap(), ident.value_type, ctx);
+                let value = lookup(ident.ident.try_into().ok()?, ident.value_type, ctx);
                 if value.is_none() {
                     let err = XkbError::InvalidIdentifier;
                     log::error!(
@@ -592,19 +585,19 @@ impl ExprDef {
                 let v: i64 = unary.child.resolve_integer_lookup::<i64, _>(
                     |ident, ctx| {
                         lookup(ident.try_into().ok()?, unary.value_type, ctx)
-                            .map(|v| v.try_into().unwrap())
+                            .and_then(|v| v.try_into().ok())
                     },
                     ctx,
                 )?;
 
-                let v: T = v.try_into().unwrap();
+                let v: T = v.try_into().ok()?;
                 Some(!v)
             }
             ExprDef::Unary(unary) if [UnaryPlus, Negate, Not].contains(&unary.op) => {
                 let v: Option<i64> = unary.child.resolve_integer_lookup::<i64, _>(
                     |ident, ctx| {
                         lookup(ident.try_into().ok()?, unary.value_type, ctx)
-                            .map(|v| v.try_into().unwrap())
+                            .and_then(|v| v.try_into().ok())
                     },
                     ctx,
                 );
@@ -646,14 +639,7 @@ impl ExprDef {
     where
         F: Copy + FnOnce(I, ExprValueType, &Context) -> Option<T>,
         I: std::convert::TryFrom<usize> + std::convert::TryInto<usize>,
-        <I as TryFrom<usize>>::Error: std::fmt::Debug,
-        T: std::ops::Not<Output = T>
-            + std::ops::BitAnd<Output = T>
-            + std::ops::BitOr<Output = T>
-            + std::convert::TryFrom<i64>
-            + std::convert::TryInto<i64>,
-        <T as TryFrom<i64>>::Error: std::fmt::Debug,
-        <T as TryInto<i64>>::Error: std::fmt::Debug,
+        T: MaskInteger,
     {
         self.resolve_mask_lookup(ctx, f)
     }
@@ -683,12 +669,12 @@ impl ExprDef {
 
         if op == ExprOpType::Ident {
             if let ExprDef::Ident(ref e) = self {
-                if let Some(s) = ctx.atom_text(e.ident) {
-                    if let Some(sym) = NAME_TO_KEYSYM.get(s) {
-                        if *sym != xkeysym::NO_SYMBOL {
-                            return Some(*sym);
-                        }
-                    }
+                if let Some(sym) = ctx
+                    .atom_text(e.ident)
+                    .and_then(|s| NAME_TO_KEYSYM.get(s))
+                    .filter(|sym| **sym != xkeysym::NO_SYMBOL)
+                {
+                    return Some(*sym);
                 }
             }
         }
@@ -767,3 +753,16 @@ impl ExprDef {
         ndx
     }
 }
+
+pub(crate) trait MaskInteger:
+    std::ops::Not<Output = Self>
+    + std::ops::BitAnd<Output = Self>
+    + std::ops::BitOr<Output = Self>
+    + std::convert::TryFrom<i64>
+    + std::convert::TryInto<i64>
+{
+}
+
+impl MaskInteger for u32 {}
+impl MaskInteger for ActionControls {}
+impl MaskInteger for StateComponent {}
