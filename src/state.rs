@@ -127,7 +127,6 @@ pub(crate) mod errors {
 
     #[derive(PartialEq, Debug, Clone)]
     pub(super) enum InternalStateError {
-        NoSuchFilter,
         CannotCreateFilterFromActionType(ActionType),
         WrongActionType,
         CannotInitializeNullFilter,
@@ -148,35 +147,35 @@ impl Filter {
                 action,
                 key,
                 _priv: FilterData::None,
-                func: FilterFunc::ModSet,
+                func: FilterFunc::ModSet.into(),
             },
             Action::Mods(ref mod_action) if mod_action.action_type == ModLatch => Filter {
                 refcnt: 0,
                 action,
                 key,
                 _priv: FilterData::None,
-                func: FilterFunc::ModLatch,
+                func: FilterFunc::ModLatch.into(),
             },
             Action::Mods(ref mod_action) if mod_action.action_type == ModLock => Filter {
                 refcnt: 0,
                 action,
                 key,
                 _priv: FilterData::None,
-                func: FilterFunc::ModLock,
+                func: FilterFunc::ModLock.into(),
             },
             Action::Group(ref group_action) if group_action.action_type == GroupSet => Filter {
                 refcnt: 0,
                 action,
                 key,
                 _priv: FilterData::None,
-                func: FilterFunc::GroupSet,
+                func: FilterFunc::GroupSet.into(),
             },
             Action::Group(ref group_action) if group_action.action_type == GroupLock => Filter {
                 refcnt: 0,
                 action,
                 key,
                 _priv: FilterData::None,
-                func: FilterFunc::GroupLock,
+                func: FilterFunc::GroupLock.into(),
             },
             a => {
                 return Err(InternalStateError::CannotCreateFilterFromActionType(
@@ -189,31 +188,31 @@ impl Filter {
     }
 }
 
-impl State {
+impl Filter {
     fn apply_filter(
         &mut self,
-        kc: RawKeycode,
-        filter_idx: usize,
+        key: &Key,
+        layout: LayoutIndex,
+        level: LevelIndex,
         direction: KeyDirection,
+        inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
         // TODO: the filter search happens a bit too often
 
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
         use FilterFunc::*;
-        match filter.func {
-            ModSet => self.filter_mod_set_func(filter_idx, kc, direction),
-            ModLatch => self.filter_mod_latch_func(filter_idx, kc, direction),
+        match self
+            .func
+            .as_ref()
+            .ok_or(InternalStateError::CannotApplyNullFilter)?
+        {
+            ModSet => self.mod_set_func(key, direction, inner_state),
+            ModLatch => self.mod_latch_func(key, layout, level, direction, inner_state),
 
-            ModLock => self.filter_mod_lock_func(filter_idx, kc, direction),
+            ModLock => self.mod_lock_func(key, direction, inner_state),
 
-            GroupSet => self.filter_group_set_func(filter_idx, kc, direction),
+            GroupSet => self.group_set_func(key, direction, inner_state),
 
-            GroupLock => self.filter_group_lock_func(filter_idx, kc, direction),
-            None => Err(InternalStateError::CannotApplyNullFilter),
+            GroupLock => self.group_lock_func(key, direction, inner_state),
         }
     }
 }
@@ -221,7 +220,7 @@ impl State {
 #[derive(Clone, Debug)]
 struct Filter {
     action: Action, //TODO: it's possible this should be a reference
-    func: FilterFunc,
+    func: Option<FilterFunc>,
     key: RawKeycode,
     refcnt: usize,
     _priv: FilterData,
@@ -250,7 +249,6 @@ enum FilterFunc {
     ModLock,
     GroupSet,
     GroupLock,
-    None,
 }
 
 impl TryFrom<ActionType> for FilterFunc {
@@ -292,8 +290,10 @@ struct StateComponents {
     leds: LedMask,
 }
 
+// TODO: name
+// TODO: the groups might not need to be in here
 #[derive(Clone)]
-pub struct State {
+struct InnerState {
     // Before updating the state, we keep a copy of just this struct.
     // This allows us to report which components of the state have been changed.
     components: StateComponents,
@@ -303,6 +303,10 @@ pub struct State {
     // These keep track of the state.
     set_mods: ModMask,
     clear_mods: ModMask,
+}
+#[derive(Clone)]
+pub struct State {
+    inner_state: InnerState,
 
     // We mustn't clear a base modifier if there's another depressed key
     // which affects it, e.g. given this sequence
@@ -341,7 +345,7 @@ impl State {
     ) -> Option<&'e KeyTypeEntry> {
         let type_index = key.groups.get(group)?.key_type;
         let _type = self.keymap.types.get(type_index)?;
-        let active_mods = self.components.mods & _type.mods.mask;
+        let active_mods = self.inner_state.components.mods & _type.mods.mask;
 
         _type.get_entry_for_mods(&active_mods)
     }
@@ -361,11 +365,10 @@ impl State {
         }
 
         // If we don't find an explicit match, the default is 0.
-        let level = match self.get_entry_for_key_state(key, layout) {
-            Some(entry) => entry.level,
-            None => 0,
-        };
-
+        let level = self
+            .get_entry_for_key_state(key, layout)
+            .map(|entry| entry.level)
+            .unwrap_or(0);
         Some(level)
     }
 }
@@ -425,7 +428,7 @@ impl State {
         let key = self.keymap.xkb_key(kc.into())?;
 
         wrap_group_into_range(
-            self.components.group.try_into().unwrap(),
+            self.inner_state.components.group.try_into().unwrap(),
             key.groups.len(),
             &key.out_of_range_group_action,
             &key.out_of_range_group_number,
@@ -455,18 +458,19 @@ impl Filters {
         action: Action,
         key: RawKeycode,
     ) -> Result<Option<usize>, InternalStateError> {
+        // Find an empty filter to overwrite
         let prev_filter = self
             .filters
             .iter_mut()
             .enumerate()
-            .find(|(_, f)| f.func == FilterFunc::None);
+            .find(|(_, f)| f.func.is_none());
 
         let (idx, filter_to_modify) = match prev_filter {
             Some((idx, f)) => {
                 f.key = key;
                 f.action = action;
                 f.func = match FilterFunc::try_from(f.action.action_type()) {
-                    Ok(func) => func,
+                    Ok(func) => Some(func),
                     Err(_) => return Ok(None),
                 };
 
@@ -494,24 +498,24 @@ impl Filters {
     }
 }
 
-impl State {
+impl Filter {
     /// Matches the filter to the `new` function
-    fn initialize_with_filter(&mut self, filter_idx: usize) -> Result<(), InternalStateError> {
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
-
+    fn initialize_with_filter(
+        &mut self,
+        inner_state: &mut InnerState,
+    ) -> Result<(), InternalStateError> {
         use FilterFunc::*;
-        match filter.func {
-            ModSet => self.filter_mod_set_new(filter_idx),
-            ModLatch => self.filter_mod_latch_new(filter_idx),
-            ModLock => self.filter_mod_lock_new(filter_idx),
+        match self
+            .func
+            .as_ref()
+            .ok_or(InternalStateError::CannotInitializeNullFilter)?
+        {
+            ModSet => self.mod_set_new(inner_state),
+            ModLatch => self.mod_latch_new(inner_state),
+            ModLock => self.mod_lock_new(inner_state),
 
-            GroupSet => self.filter_group_set_new(filter_idx),
-            GroupLock => self.filter_group_lock_new(filter_idx),
-            None => Err(InternalStateError::CannotInitializeNullFilter),
+            GroupSet => self.group_set_new(inner_state),
+            GroupLock => self.group_lock_new(inner_state),
         }
     }
 }
@@ -529,265 +533,193 @@ enum FilterResult {
     Continue,
 }
 
-impl State {
-    fn filter_group_set_new(&mut self, filter_idx: usize) -> Result<(), InternalStateError> {
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
+impl Filter {
+    fn group_set_new(&mut self, inner_state: &mut InnerState) -> Result<(), InternalStateError> {
+        let base_group = inner_state.components.base_group.try_into().unwrap();
 
-        let base_group = self.components.base_group.try_into().unwrap();
+        self._priv = FilterData::Group(base_group);
 
-        filter._priv = FilterData::Group(base_group);
-
-        if filter
+        if self
             .group_action()?
             .flags
             .intersects(ActionFlags::AbsoluteSwitch)
         {
-            self.components.base_group = filter.group_action()?.group.unwrap_or(0);
+            inner_state.components.base_group = self.group_action()?.group.unwrap_or(0);
         } else {
-            self.components.base_group += filter.group_action()?.group.unwrap_or(0);
+            inner_state.components.base_group += self.group_action()?.group.unwrap_or(0);
         }
 
         Ok(())
     }
-
-    fn filter_group_set_func(
+    fn group_set_func(
         &mut self,
-        filter_idx: usize,
-        kc: RawKeycode,
+        key: &Key,
         direction: KeyDirection,
+        inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
-
-        // check that key exists
-        self.keymap
-            .xkb_key(kc)
-            .ok_or(InternalStateError::NoSuchKey)?;
-
-        if kc != filter.key {
-            filter.group_action()?.flags &= !ActionFlags::LockClear;
+        if key.keycode.raw() != self.key {
+            self.group_action()?.flags &= !ActionFlags::LockClear;
             return Ok(FilterResult::Continue);
         }
 
         if direction == KeyDirection::Down {
-            filter.refcnt += 1;
+            self.refcnt += 1;
             return Ok(FilterResult::Consume);
         } else {
-            filter.refcnt -= 1; // TODO: check bounds
-            if filter.refcnt > 0 {
+            self.refcnt -= 1; // TODO: check bounds
+            if self.refcnt > 0 {
                 return Ok(FilterResult::Consume);
             }
         }
 
-        self.components.base_group = match &filter._priv {
+        inner_state.components.base_group = match &self._priv {
             FilterData::Group(u) => (*u).try_into().unwrap(),
             FilterData::None => 0,
             _ => return Err(InternalStateError::WrongFilterData),
         };
 
-        if filter
+        if self
             .group_action()?
             .flags
             .intersects(ActionFlags::LockClear)
         {
-            self.components.locked_group = 0;
+            inner_state.components.locked_group = 0;
         }
 
-        filter.func = FilterFunc::None;
+        self.func = None;
         Ok(FilterResult::Continue)
     }
 
-    fn filter_group_lock_new(&mut self, filter_idx: usize) -> Result<(), InternalStateError> {
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
-
-        let group_action = filter.group_action()?;
+    fn group_lock_new(&mut self, inner_state: &mut InnerState) -> Result<(), InternalStateError> {
+        let group_action = self.group_action()?;
 
         if group_action.flags.intersects(ActionFlags::AbsoluteSwitch) {
-            self.components.locked_group = group_action.group.unwrap_or(0);
+            inner_state.components.locked_group = group_action.group.unwrap_or(0);
         } else {
-            self.components.locked_group += group_action.group.unwrap_or(0);
+            inner_state.components.locked_group += group_action.group.unwrap_or(0);
         }
 
         Ok(())
     }
 
-    fn filter_group_lock_func(
+    fn group_lock_func(
         &mut self,
-        filter_idx: usize,
-        kc: RawKeycode,
+        key: &Key,
         direction: KeyDirection,
+        _inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
-
-        self.keymap
-            .xkb_key(kc)
-            .ok_or(InternalStateError::NoSuchKey)?;
-
         use FilterResult::*;
-        if kc != filter.key {
+        if key.keycode.raw() != self.key {
             return Ok(Continue);
         }
 
         if direction == KeyDirection::Down {
-            filter.refcnt += 1;
+            self.refcnt += 1;
             return Ok(Consume);
         }
-        filter.refcnt -= 1;
-        if filter.refcnt > 0 {
+        self.refcnt -= 1;
+        if self.refcnt > 0 {
             return Ok(Consume);
         }
 
-        filter.func = FilterFunc::None;
+        self.func = None;
 
         Ok(Continue)
     }
 
-    fn filter_mod_set_new(&mut self, filter_idx: usize) -> Result<(), InternalStateError> {
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
-
-        self.set_mods = filter.mod_action()?.mods.mask;
+    fn mod_set_new(&mut self, inner_state: &mut InnerState) -> Result<(), InternalStateError> {
+        inner_state.set_mods = self.mod_action()?.mods.mask;
 
         Ok(())
     }
-}
 
-impl State {
-    fn filter_mod_set_func(
+    fn mod_set_func(
         &mut self,
-        filter_idx: usize,
-        kc: RawKeycode,
+        key: &Key,
         direction: KeyDirection,
+        inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
         use FilterResult::*;
 
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
-
-        // determine if key exists
-        self.keymap
-            .xkb_key(kc)
-            .ok_or(InternalStateError::NoSuchKey)?;
-
-        if kc != filter.key {
-            filter.mod_action()?.flags &= !ActionFlags::LockClear;
+        if key.keycode.raw() != self.key {
+            self.mod_action()?.flags &= !ActionFlags::LockClear;
 
             return Ok(Continue);
         }
         if direction == KeyDirection::Down {
-            filter.refcnt += 1;
+            self.refcnt += 1;
             return Ok(Consume);
         } else {
             // If something else refers to it, consume
-            filter.refcnt -= 1;
-            if filter.refcnt > 0 {
+            self.refcnt -= 1;
+            if self.refcnt > 0 {
                 return Ok(Consume);
             }
         }
 
-        let mod_action = filter.mod_action()?;
+        let mod_action = self.mod_action()?;
 
-        self.clear_mods = mod_action.mods.mask;
+        inner_state.clear_mods = mod_action.mods.mask;
         if mod_action.flags.intersects(ActionFlags::LockClear) {
-            self.components.locked_mods &= !mod_action.mods.mask;
+            inner_state.components.locked_mods &= !mod_action.mods.mask;
         }
 
-        filter.func = FilterFunc::None;
+        self.func = None;
         Ok(Continue)
     }
-}
+    fn mod_lock_new(&mut self, inner_state: &mut InnerState) -> Result<(), InternalStateError> {
+        self._priv =
+            FilterData::Mods(inner_state.components.locked_mods & self.mod_action()?.mods.mask);
 
-impl State {
-    fn filter_mod_lock_new(&mut self, filter_idx: usize) -> Result<(), InternalStateError> {
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
+        let mod_action = self.mod_action()?;
 
-        filter._priv =
-            FilterData::Mods(self.components.locked_mods & filter.mod_action()?.mods.mask);
-
-        let mod_action = filter.mod_action()?;
-
-        self.set_mods |= mod_action.mods.mask;
+        inner_state.set_mods |= mod_action.mods.mask;
 
         if !mod_action.flags.intersects(ActionFlags::LockNoLock) {
-            self.components.locked_mods |= mod_action.mods.mask;
+            inner_state.components.locked_mods |= mod_action.mods.mask;
         }
 
         Ok(())
     }
 
-    fn filter_mod_lock_func(
+    fn mod_lock_func(
         &mut self,
-        filter_idx: usize,
-        kc: RawKeycode,
+        key: &Key,
         direction: KeyDirection,
+        inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
-
-        self.keymap
-            .xkb_key(kc)
-            .ok_or(InternalStateError::NoSuchKey)?;
-
         use FilterResult::*;
 
-        if kc != filter.key {
+        if key.keycode.raw() != self.key {
             return Ok(Continue);
         }
 
         if direction == KeyDirection::Down {
-            filter.refcnt += 1;
+            self.refcnt += 1;
             return Ok(Consume);
         }
 
-        filter.refcnt -= 1;
-        if filter.refcnt > 0 {
+        self.refcnt -= 1;
+        if self.refcnt > 0 {
             return Ok(Consume);
         }
 
-        self.clear_mods |= filter.mod_action()?.mods.mask;
+        inner_state.clear_mods |= self.mod_action()?.mods.mask;
 
-        if !filter
+        if !self
             .mod_action()?
             .flags
             .intersects(ActionFlags::LockNoUnlock)
         {
-            let mods = match filter._priv {
+            let mods = match self._priv {
                 FilterData::Mods(mods) => mods,
                 FilterData::None => 0,
                 _ => return Err(InternalStateError::WrongFilterData),
             };
-            self.components.locked_mods &= !mods;
+            inner_state.components.locked_mods &= !mods;
         }
 
-        filter.func = FilterFunc::None;
+        self.func = None;
 
         Ok(Continue)
     }
@@ -812,39 +744,33 @@ impl Action {
     }
 }
 
-impl State {
-    fn filter_mod_latch_new(&mut self, filter_idx: usize) -> Result<(), InternalStateError> {
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
-
-        filter._priv = FilterData::Latch(LatchState::KeyDown);
-        self.set_mods = filter.mod_action()?.mods.mask;
+impl Filter {
+    fn mod_latch_new(&mut self, inner_state: &mut InnerState) -> Result<(), InternalStateError> {
+        self._priv = FilterData::Latch(LatchState::KeyDown);
+        inner_state.set_mods = self.mod_action()?.mods.mask;
 
         Ok(())
     }
 
-    fn filter_mod_latch_func(
+    fn mod_latch_func(
         &mut self,
-        filter_idx: usize,
-        kc: RawKeycode,
+        key: &Key,
+        layout: LayoutIndex,
+        level: LevelIndex,
         direction: KeyDirection,
+        inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
-        let action = self.key_get_action(kc).cloned();
-        let filter = self
-            .filters
-            .filters
-            .get_mut(filter_idx)
-            .ok_or(InternalStateError::NoSuchFilter)?;
-
-        self.keymap
-            .xkb_key(kc)
-            .ok_or(InternalStateError::NoSuchKey)?;
+        // TODO: how to handle Some(Action::None) here?
+        let action = key
+            .groups
+            .get(layout)
+            .expect("Invalid layout")
+            .levels
+            .get(level)
+            .map(|l| &l.action);
 
         use FilterResult::*;
-        let mut latch: LatchState = match &filter._priv {
+        let mut latch: LatchState = match &self._priv {
             FilterData::Latch(latch) => latch.clone(),
             _ => return Err(InternalStateError::WrongFilterData),
         };
@@ -857,24 +783,24 @@ impl State {
             match action {
                 Some(Action::Mods(mod_action))
                     if mod_action.action_type == ActionType::ModLatch
-                        && mod_action.flags == filter.mod_action()?.flags
-                        && mod_action.mods.mask == filter.mod_action()?.mods.mask =>
+                        && mod_action.flags == self.mod_action()?.flags
+                        && mod_action.mods.mask == self.mod_action()?.mods.mask =>
                 {
                     // TODO: should this be a reference?
-                    filter.action = Action::Mods(mod_action.clone());
+                    self.action = Action::Mods(mod_action.clone());
 
                     if mod_action.flags.intersects(ActionFlags::LatchToLock) {
-                        filter.mod_action()?.action_type = ActionType::ModLock;
-                        filter.func = FilterFunc::ModLock;
+                        self.mod_action()?.action_type = ActionType::ModLock;
+                        self.func = Some(FilterFunc::ModLock);
 
-                        self.components.locked_mods |= mod_action.mods.mask;
+                        inner_state.components.locked_mods |= mod_action.mods.mask;
                     } else {
-                        filter.mod_action()?.action_type = ActionType::ModSet;
-                        filter.func = FilterFunc::ModSet;
-                        self.set_mods = mod_action.mods.mask;
+                        self.mod_action()?.action_type = ActionType::ModSet;
+                        self.func = Some(FilterFunc::ModSet);
+                        inner_state.set_mods = mod_action.mods.mask;
                     }
-                    filter.key = kc;
-                    self.components.latched_mods &= !mod_action.mods.mask;
+                    self.key = key.keycode.raw();
+                    inner_state.components.latched_mods &= !mod_action.mods.mask;
                     // "XXX beep beep!"
 
                     return Ok(Consume);
@@ -886,14 +812,14 @@ impl State {
                     // we might need to break the latch in the
                     // next run after this press?"
 
-                    self.components.latched_mods &= !filter.mod_action()?.mods.mask;
+                    inner_state.components.latched_mods &= !self.mod_action()?.mods.mask;
 
-                    filter.func = FilterFunc::None;
+                    self.func = None;
                     return Ok(Continue);
                 }
                 _ => {} // do nothing
             }
-        } else if direction == KeyDirection::Up && kc == filter.key {
+        } else if direction == KeyDirection::Up && key.keycode.raw() == self.key {
             // Our key got released. If we've set it to clear locks,
             // and we currently have the same modifiers locked, then
             // release them and don't actually latch. Else we've
@@ -901,29 +827,26 @@ impl State {
             // out modifier from base to latched.
 
             if latch == LatchState::NoLatch
-                || (filter
-                    .mod_action()?
-                    .flags
-                    .intersects(ActionFlags::LockClear)
-                    && (self.components.locked_mods & filter.mod_action()?.mods.mask)
-                        == filter.mod_action()?.mods.mask)
+                || (self.mod_action()?.flags.intersects(ActionFlags::LockClear)
+                    && (inner_state.components.locked_mods & self.mod_action()?.mods.mask)
+                        == self.mod_action()?.mods.mask)
             {
                 // "XXX: we might be a bit overenthusiastic about
                 // clearing mods other filters have set here?"
 
                 if latch == LatchState::Pending {
-                    self.components.latched_mods &= !filter.mod_action()?.mods.mask;
+                    inner_state.components.latched_mods &= !self.mod_action()?.mods.mask;
                 } else {
-                    self.clear_mods = filter.mod_action()?.mods.mask;
+                    inner_state.clear_mods = self.mod_action()?.mods.mask;
                 }
 
-                self.components.locked_mods &= !filter.mod_action()?.mods.mask;
+                inner_state.components.locked_mods &= !self.mod_action()?.mods.mask;
 
-                filter.func = FilterFunc::None;
+                self.func = None;
             } else {
                 latch = LatchState::Pending;
-                self.clear_mods = filter.mod_action()?.mods.mask;
-                self.components.latched_mods |= filter.mod_action()?.mods.mask;
+                inner_state.clear_mods = self.mod_action()?.mods.mask;
+                inner_state.components.latched_mods |= self.mod_action()?.mods.mask;
                 // "XXX beep beep!"
             }
         } else if direction == KeyDirection::Down && latch == LatchState::KeyDown {
@@ -936,35 +859,46 @@ impl State {
             latch = LatchState::NoLatch;
         }
 
-        filter._priv = FilterData::Latch(latch);
+        self._priv = FilterData::Latch(latch);
 
         Ok(Continue)
     }
+}
 
+impl State {
     /// Applies any relevant filters to the key, first from the list of
     /// filters that are currently active, then if no filter has claimed
     /// the key, possibly apply a new filter from the key action.
-
     fn filter_apply_all(
         &mut self,
         kc: RawKeycode,
         direction: KeyDirection,
     ) -> Result<(), InternalStateError> {
-        let mut consumed = false;
-
         // First run through all the currently active filters
         // and see if any of them have consumed this event.
+        // TODO: remove redundancy
+        let layout = self.key_get_layout(kc).expect("Key has no valid layout");
+        let level = self
+            .key_get_level(kc, layout)
+            .expect("Key has no valid level");
 
-        for idx in 0..self.filters.filters.len() {
+        let key = self
+            .keymap
+            .xkb_key(kc)
+            .ok_or(InternalStateError::NoSuchKey)?;
+
+        // apply all the filters and see if any were consumed
+        let consumed = self
+            .filters
+            .filters
+            .iter_mut()
+            // Skip none filters
             // TODO: since these are not overwritten, doesn't the filters array build up and become very long?
-            if let FilterFunc::None = self.filters.filters[idx].func {
-                continue;
-            }
-
-            if self.apply_filter(kc, idx, direction)? == FilterResult::Consume {
-                consumed = true;
-            }
-        }
+            .filter(|f| f.func.is_some())
+            .map(|f| f.apply_filter(key, layout, level, direction, &mut self.inner_state))
+            .collect::<Result<Vec<FilterResult>, InternalStateError>>()?
+            .into_iter()
+            .any(|ret| ret == FilterResult::Consume);
 
         if consumed || direction == KeyDirection::Up {
             return Ok(());
@@ -997,7 +931,11 @@ impl State {
             None => return Ok(()),
         }; // skip invalid action
 
-        self.initialize_with_filter(filter_idx)?;
+        self.filters
+            .filters
+            .get_mut(filter_idx)
+            .expect("Expected filter to be created, but none was created")
+            .initialize_with_filter(&mut self.inner_state)?;
 
         Ok(())
     }
@@ -1011,10 +949,12 @@ impl State {
         // TODO: keep keymap as reference?
         Self {
             keymap,
-            components: Default::default(),
+            inner_state: InnerState {
+                components: Default::default(),
+                set_mods: 0,
+                clear_mods: 0,
+            },
             filters: Filters { filters: vec![] },
-            set_mods: 0,
-            clear_mods: 0,
             mod_key_count: [0; XKB_MAX_MODS],
         }
     }
@@ -1028,7 +968,7 @@ impl State {
 
     // Update the LED state to match the rest of the State
     fn led_update_all(&mut self) {
-        self.components.leds = 0;
+        self.inner_state.components.leds = 0;
 
         for (idx, led) in self.keymap.leds.iter().enumerate() {
             if let Some(led) = led {
@@ -1037,20 +977,20 @@ impl State {
 
                 if !led.which_mods.is_empty() && led.mods.mask != 0 {
                     if led.which_mods.intersects(StateComponent::MODS_EFFECTIVE) {
-                        mod_mask |= self.components.mods;
+                        mod_mask |= self.inner_state.components.mods;
                     }
                     if led.which_mods.intersects(StateComponent::MODS_DEPRESSED) {
-                        mod_mask |= self.components.base_mods;
+                        mod_mask |= self.inner_state.components.base_mods;
                     }
                     if led.which_mods.intersects(StateComponent::MODS_LATCHED) {
-                        mod_mask |= self.components.latched_mods;
+                        mod_mask |= self.inner_state.components.latched_mods;
                     }
                     if led.which_mods.intersects(StateComponent::MODS_LOCKED) {
-                        mod_mask |= self.components.locked_mods;
+                        mod_mask |= self.inner_state.components.locked_mods;
                     }
 
                     if (led.mods.mask & mod_mask) != 0 {
-                        self.components.leds |= 1u32 << idx;
+                        self.inner_state.components.leds |= 1u32 << idx;
                         continue;
                     }
                 }
@@ -1061,29 +1001,29 @@ impl State {
                         .which_groups
                         .intersects(StateComponent::LAYOUT_EFFECTIVE)
                     {
-                        group_mask |= 1u32 << self.components.group;
+                        group_mask |= 1u32 << self.inner_state.components.group;
                     }
                     if led
                         .which_groups
                         .intersects(StateComponent::LAYOUT_DEPRESSED)
                     {
-                        group_mask |= 1u32 << self.components.base_group;
+                        group_mask |= 1u32 << self.inner_state.components.base_group;
                     }
                     if led.which_groups.intersects(StateComponent::LAYOUT_LATCHED) {
-                        group_mask |= 1u32 << self.components.latched_group;
+                        group_mask |= 1u32 << self.inner_state.components.latched_group;
                     }
                     if led.which_groups.intersects(StateComponent::LAYOUT_LOCKED) {
-                        group_mask |= 1u32 << self.components.locked_group;
+                        group_mask |= 1u32 << self.inner_state.components.locked_group;
                     }
 
                     if (led.groups & group_mask) > 0 {
-                        self.components.leds |= 1u32 << idx;
+                        self.inner_state.components.leds |= 1u32 << idx;
                         continue;
                     }
                 }
 
                 if led.ctrls.intersects(self.keymap.enabled_ctrls) {
-                    self.components.leds |= 1u32 << idx;
+                    self.inner_state.components.leds |= 1u32 << idx;
                     continue;
                 }
             }
@@ -1095,31 +1035,32 @@ impl State {
     fn update_derived(&mut self) {
         // Update state.components.mods
 
-        self.components.mods =
-            self.components.base_mods | self.components.latched_mods | self.components.locked_mods;
+        self.inner_state.components.mods = self.inner_state.components.base_mods
+            | self.inner_state.components.latched_mods
+            | self.inner_state.components.locked_mods;
 
         // TODO: use groups_wrap to control instead of always RANGE_WRAP.
         let wrapped = wrap_group_into_range(
-            self.components.locked_group,
+            self.inner_state.components.locked_group,
             self.keymap.num_groups,
             &RangeExceedType::Wrap,
             &0,
         )
         .unwrap_or(0);
 
-        self.components.locked_group = wrapped.try_into().unwrap_or(0);
+        self.inner_state.components.locked_group = wrapped.try_into().unwrap_or(0);
 
         let wrapped = wrap_group_into_range(
-            self.components.base_group
-                + self.components.latched_group
-                + self.components.locked_group,
+            self.inner_state.components.base_group
+                + self.inner_state.components.latched_group
+                + self.inner_state.components.locked_group,
             self.keymap.num_groups,
             &RangeExceedType::Wrap,
             &0,
         )
         .unwrap_or(0);
 
-        self.components.group = wrapped;
+        self.inner_state.components.group = wrapped;
 
         self.led_update_all();
     }
@@ -1185,50 +1126,50 @@ impl State {
             return StateComponent::empty();
         }
 
-        let prev_components = self.components.clone();
+        let prev_components = self.inner_state.components.clone();
 
         // reset the mods for this turn
-        self.set_mods = 0;
-        self.clear_mods = 0;
+        self.inner_state.set_mods = 0;
+        self.inner_state.clear_mods = 0;
 
         self.filter_apply_all(kc, direction)
             .expect("Could not apply filters");
 
         for bit_idx in 0..XKB_MAX_MODS {
-            if self.set_mods == 0 {
+            if self.inner_state.set_mods == 0 {
                 break;
             }
 
             let bit = 1 << bit_idx;
 
-            if (self.set_mods & bit) != 0 {
+            if (self.inner_state.set_mods & bit) != 0 {
                 self.mod_key_count[bit_idx] += 1;
-                self.components.base_mods |= bit;
-                self.set_mods &= !bit;
+                self.inner_state.components.base_mods |= bit;
+                self.inner_state.set_mods &= !bit;
             }
         }
 
         for bit_idx in 0..XKB_MAX_MODS {
-            if self.clear_mods == 0 {
+            if self.inner_state.clear_mods == 0 {
                 break;
             }
 
             let bit = 1 << bit_idx;
 
-            if (self.clear_mods & bit) != 0 {
+            if (self.inner_state.clear_mods & bit) != 0 {
                 self.mod_key_count[bit_idx] -= 1;
 
                 if self.mod_key_count[bit_idx] <= 0 {
-                    self.components.base_mods &= !bit;
+                    self.inner_state.components.base_mods &= !bit;
                     self.mod_key_count[bit_idx] = 0;
                 }
 
-                self.clear_mods &= !bit;
+                self.inner_state.clear_mods &= !bit;
             }
         }
         self.update_derived();
 
-        self.components.get_changes(&prev_components)
+        self.inner_state.components.get_changes(&prev_components)
     }
     /// Updates the state from a set of explicit masks.
     ///
@@ -1250,14 +1191,14 @@ impl State {
         latched_group: LayoutIndex,
         locked_group: LayoutIndex,
     ) -> StateComponent {
-        let prev_components = self.components.clone();
+        let prev_components = self.inner_state.components.clone();
 
         // Only include modifiers which exist in the keymap
         let mask: ModMask = (1 << self.keymap.num_mods()) - 1;
 
-        self.components.base_mods = base_mods & mask;
-        self.components.latched_mods = latched_mods & mask;
-        self.components.locked_mods = locked_mods & mask;
+        self.inner_state.components.base_mods = base_mods & mask;
+        self.inner_state.components.latched_mods = latched_mods & mask;
+        self.inner_state.components.locked_mods = locked_mods & mask;
 
         // Make sure the mods are fully resolved -
         // since we get arbitrary input, they might nt be.
@@ -1265,29 +1206,29 @@ impl State {
         // TODO: documentation
 
         // We OR here because mod_mask_get_effective() drops vmods.
-        self.components.base_mods |= self
+        self.inner_state.components.base_mods |= self
             .keymap
             .mods
-            .mod_mask_get_effective(self.components.base_mods);
-        self.components.latched_mods |= self
+            .mod_mask_get_effective(self.inner_state.components.base_mods);
+        self.inner_state.components.latched_mods |= self
             .keymap
             .mods
-            .mod_mask_get_effective(self.components.latched_mods);
-        self.components.locked_mods |= self
+            .mod_mask_get_effective(self.inner_state.components.latched_mods);
+        self.inner_state.components.locked_mods |= self
             .keymap
             .mods
-            .mod_mask_get_effective(self.components.locked_mods);
+            .mod_mask_get_effective(self.inner_state.components.locked_mods);
 
         // TODO: is this right?
         // TODO: return error if value out of bounds
-        self.components.base_group = base_group.try_into().unwrap();
+        self.inner_state.components.base_group = base_group.try_into().unwrap();
 
-        self.components.latched_group = latched_group.try_into().unwrap();
+        self.inner_state.components.latched_group = latched_group.try_into().unwrap();
 
-        self.components.locked_group = locked_group.try_into().unwrap();
+        self.inner_state.components.locked_group = locked_group.try_into().unwrap();
         self.update_derived();
 
-        self.components.get_changes(&prev_components)
+        self.inner_state.components.get_changes(&prev_components)
     }
 
     /// Get the keysyms obtained from pressing a particular key in a given keyboard state.
@@ -1533,16 +1474,16 @@ impl State {
     fn _serialize_mods(&self, _type: StateComponent) -> ModMask {
         let mut ret = 0;
         if _type.intersects(StateComponent::MODS_EFFECTIVE) {
-            return self.components.mods;
+            return self.inner_state.components.mods;
         }
         if _type.intersects(StateComponent::MODS_DEPRESSED) {
-            ret |= self.components.base_mods;
+            ret |= self.inner_state.components.base_mods;
         }
         if _type.intersects(StateComponent::MODS_LATCHED) {
-            ret |= self.components.latched_mods;
+            ret |= self.inner_state.components.latched_mods;
         }
         if _type.intersects(StateComponent::MODS_LOCKED) {
-            ret |= self.components.locked_mods;
+            ret |= self.inner_state.components.locked_mods;
         }
 
         ret
@@ -1562,16 +1503,16 @@ impl State {
         let mut ret = 0;
 
         if _type.intersects(StateComponent::LAYOUT_EFFECTIVE) {
-            return self.components.group;
+            return self.inner_state.components.group;
         }
         if _type.intersects(StateComponent::LAYOUT_DEPRESSED) {
-            ret += self.components.base_group;
+            ret += self.inner_state.components.base_group;
         }
         if _type.intersects(StateComponent::LAYOUT_LATCHED) {
-            ret += self.components.latched_group;
+            ret += self.inner_state.components.latched_group;
         }
         if _type.intersects(StateComponent::LAYOUT_LOCKED) {
-            ret += self.components.locked_group;
+            ret += self.inner_state.components.locked_group;
         }
 
         ret.try_into().unwrap()
@@ -1711,7 +1652,9 @@ impl State {
             return Err(LayoutIsActiveError::NoSuchLayoutIndex(idx));
         }
 
-        if _type.intersects(StateComponent::LAYOUT_EFFECTIVE) && self.components.group == idx {
+        if _type.intersects(StateComponent::LAYOUT_EFFECTIVE)
+            && self.inner_state.components.group == idx
+        {
             return Ok(true);
         }
 
@@ -1719,14 +1662,19 @@ impl State {
             .try_into()
             .map_err(|_| LayoutIsActiveError::NoSuchLayoutIndex(idx))?;
 
-        if _type.intersects(StateComponent::LAYOUT_DEPRESSED) && self.components.base_group == idx {
-            return Ok(true);
-        }
-        if _type.intersects(StateComponent::LAYOUT_LATCHED) && self.components.latched_group == idx
+        if _type.intersects(StateComponent::LAYOUT_DEPRESSED)
+            && self.inner_state.components.base_group == idx
         {
             return Ok(true);
         }
-        if _type.intersects(StateComponent::LAYOUT_LOCKED) && self.components.locked_group == idx {
+        if _type.intersects(StateComponent::LAYOUT_LATCHED)
+            && self.inner_state.components.latched_group == idx
+        {
+            return Ok(true);
+        }
+        if _type.intersects(StateComponent::LAYOUT_LOCKED)
+            && self.inner_state.components.locked_group == idx
+        {
             return Ok(true);
         }
 
@@ -1767,7 +1715,7 @@ impl State {
             .and_then(|led| led.name)
             .ok_or(LedIsActiveError::NoSuchLedIndex(idx))?;
 
-        Ok(self.components.leds & (1 << idx) > 0)
+        Ok(self.inner_state.components.leds & (1 << idx) > 0)
     }
 
     /// Test whether a LED is active in a given keyboard state by name.
