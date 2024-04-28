@@ -132,7 +132,6 @@ pub(crate) mod errors {
         CannotInitializeNullFilter,
         CannotApplyNullFilter,
         WrongFilterData,
-        NoSuchKey,
     }
 }
 use errors::*;
@@ -288,7 +287,6 @@ struct StateComponents {
     leds: LedMask,
 }
 
-// TODO: name
 // TODO: the groups might not need to be in here
 #[derive(Clone)]
 struct InnerState {
@@ -874,39 +872,34 @@ impl Filter {
     }
 }
 
-impl State {
+impl Filters {
     /// Applies any relevant filters to the key, first from the list of
     /// filters that are currently active, then if no filter has claimed
     /// the key, possibly apply a new filter from the key action.
     fn filter_apply_all(
         &mut self,
-        kc: RawKeycode,
+        key: &Key,
         direction: KeyDirection,
+        keymap: &Keymap,
+        inner_state: &mut InnerState,
     ) -> Result<(), InternalStateError> {
         // First run through all the currently active filters
         // and see if any of them have consumed this event.
-        // TODO: remove redundancy
-        let key = self
-            .keymap
-            .xkb_key(kc)
-            .ok_or(InternalStateError::NoSuchKey)?;
 
         let layout = key
-            .get_layout(&self.inner_state)
+            .get_layout(inner_state)
             .expect("Key has no valid layout");
         let level = key
-            .get_level(layout, &self.keymap, &self.inner_state)
+            .get_level(layout, keymap, inner_state)
             .expect("Key has no valid level");
 
         // apply all the filters and see if any were consumed
         let consumed = self
             .filters
-            .filters
             .iter_mut()
             // Skip none filters
-            // TODO: since these are not overwritten, doesn't the filters array build up and become very long?
             .filter(|f| f.func.is_some())
-            .map(|f| f.apply_filter(key, layout, level, direction, &mut self.inner_state))
+            .map(|f| f.apply_filter(key, layout, level, direction, inner_state))
             .collect::<Result<Vec<FilterResult>, InternalStateError>>()?
             .into_iter()
             .any(|ret| ret == FilterResult::Consume);
@@ -933,24 +926,21 @@ impl State {
             return Ok(());
         }
 
-        if self.keymap.xkb_key(kc).is_none() {
-            return Ok(());
-        }
-
-        let filter_idx = match self.filters.add_or_modify_filter(action, kc)? {
+        let filter_idx = match self.add_or_modify_filter(action, key.keycode.raw())? {
             Some(idx) => idx,
             None => return Ok(()),
         }; // skip invalid action
 
         self.filters
-            .filters
             .get_mut(filter_idx)
             .expect("Expected filter to be created, but none was created")
-            .initialize_with_filter(&mut self.inner_state)?;
+            .initialize_with_filter(inner_state)?;
 
         Ok(())
     }
+}
 
+impl State {
     /// Create a new keyboard state machine
     /// from a provided keymap.
     ///
@@ -1006,7 +996,6 @@ impl State {
                     }
                 }
 
-                // TODO: should led.groups be None?
                 if !led.which_groups.is_empty() && led.groups != 0 {
                     if led
                         .which_groups
@@ -1133,9 +1122,10 @@ impl State {
         direction: KeyDirection,
     ) -> StateComponent {
         let kc = kc.into();
-        if self.keymap.xkb_key(kc).is_none() {
-            return StateComponent::empty();
-        }
+        let key = match self.keymap.xkb_key(kc) {
+            Some(key) => key,
+            None => return StateComponent::empty(),
+        };
 
         let prev_components = self.inner_state.components.clone();
 
@@ -1143,7 +1133,8 @@ impl State {
         self.inner_state.set_mods = 0;
         self.inner_state.clear_mods = 0;
 
-        self.filter_apply_all(kc, direction)
+        self.filters
+            .filter_apply_all(key, direction, &self.keymap, &mut self.inner_state)
             .expect("Could not apply filters");
 
         for bit_idx in 0..XKB_MAX_MODS {
@@ -1211,12 +1202,20 @@ impl State {
         self.inner_state.components.latched_mods = latched_mods & mask;
         self.inner_state.components.locked_mods = locked_mods & mask;
 
-        // Make sure the mods are fully resolved -
-        // since we get arbitrary input, they might nt be.
-        //
-        // TODO: documentation
-
-        // We OR here because mod_mask_get_effective() drops vmods.
+        /* Make sure the mods are fully resolved - since we get arbitrary
+         * input, they might not be.
+         *
+         * It might seem more reasonable to do this only for components.mods
+         * in xkb_state_update_derived(), rather than for each component
+         * seperately.  That would allow to distinguish between "really"
+         * depressed mods (would be in MODS_DEPRESSED) and indirectly
+         * depressed to to a mapping (would only be in MODS_EFFECTIVE).
+         * However, the traditional behavior of xkb_state_update_key() is that
+         * if a vmod is depressed, its mappings are depressed with it; so we're
+         * expected to do the same here.  Also, LEDs (usually) look if a real
+         * mod is locked, not just effective; otherwise it won't be lit.
+         *
+         * We OR here because mod_mask_get_effective() drops vmods. */
         self.inner_state.components.base_mods |= self
             .keymap
             .mods
@@ -1231,12 +1230,11 @@ impl State {
             .mod_mask_get_effective(self.inner_state.components.locked_mods);
 
         // TODO: is this right?
-        // TODO: return error if value out of bounds
-        self.inner_state.components.base_group = base_group.try_into().unwrap();
+        self.inner_state.components.base_group = base_group as i32;
 
-        self.inner_state.components.latched_group = latched_group.try_into().unwrap();
+        self.inner_state.components.latched_group = latched_group as i32;
 
-        self.inner_state.components.locked_group = locked_group.try_into().unwrap();
+        self.inner_state.components.locked_group = locked_group as i32;
         self.update_derived();
 
         self.inner_state.components.get_changes(&prev_components)

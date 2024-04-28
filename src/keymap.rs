@@ -104,8 +104,6 @@ use crate::rust_xkbcommon::*;
 /// So just lifting this limit would cause problems for
 /// people who will use more than 4 layouts.
 ///
-// TODO: Fix the group index syntax in the rules
-//format, preferably in a backwards compatible way.
 //
 pub const XKB_MAX_GROUPS: u8 = 4;
 pub(crate) const XKB_MAX_MODS: usize = std::mem::size_of::<ModMask>() * 8;
@@ -300,7 +298,7 @@ impl GroupAction {
 pub(crate) struct ControlsAction {
     pub(crate) action_type: ActionType,
     pub(crate) flags: ActionFlags,
-    pub(crate) ctrls: ActionControls, //TODO: where is this?
+    pub(crate) ctrls: ActionControls,
 }
 impl ControlsAction {
     fn new(action_type: ActionType) -> Self {
@@ -591,15 +589,11 @@ bitflags::bitflags! {
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) struct Level {
-    // TODO: there is a possibility here
-    // of having `action` set to Some(Action::None),
-    // which is confusing
     pub(crate) action: Action,
     pub(crate) syms: Vec<Option<Keysym>>,
 }
 
 impl Level {
-    // TODO: replace this with a variable?
     pub(crate) fn num_syms(&self) -> usize {
         self.syms.iter().filter(|s| s.is_some()).count()
     }
@@ -665,7 +659,6 @@ impl KeyBuilder {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Key {
-    // TODO: methods
     pub(super) keycode: Keycode,
     pub(crate) name: Atom,
     pub(crate) explicit: ExplicitComponents,
@@ -830,10 +823,10 @@ impl<T: KeymapFormatType> KeymapBuilder<T> {
         // simple copy of values
 
         Keymap {
-            context: self.context, //TODO: pointer
+            context: self.context,
             flags: self.flags,
             format: self.format.into(),
-            enabled_ctrls: ActionControls::empty(), //TODO: substitute the actual value
+            enabled_ctrls: ActionControls::empty(),
             min_key_code: self.min_key_code.unwrap_or(8), //TODO: remove this default
             max_key_code: self.max_key_code.unwrap_or(255), // TODO: remove this default
             keys: self.keys.into_iter().map(|(k, v)| (k, v.build())).collect(),
@@ -881,10 +874,7 @@ impl Keymap {
     where
         F: TryInto<CompileFlags> + Clone,
     {
-        let mut rmlvo = match rmlvo {
-            Some(r) => r,
-            None => RuleNames::empty(),
-        };
+        let mut rmlvo = rmlvo.unwrap_or(RuleNames::empty());
 
         let _format = KeymapFormat::TextV1;
 
@@ -1073,7 +1063,6 @@ impl Keymap {
 
     pub fn led_get_index(&self, name: impl AsRef<str>) -> Option<LedIndex> {
         let atom = self.context.atom_lookup(name.as_ref())?;
-        // TODO: why does name have to be Some(..)?
         self.leds
             .iter()
             .position(|led| matches!(led, Some(led) if led.name == Some(atom)))
@@ -1196,7 +1185,6 @@ impl Keymap {
     }
 
     // equivalent to key_for_each
-    // TODO: should &Key be returned or left out?
     // TODO: should the gaps between keycodes also be returned? i.e. return
     // self.min_key_code..=self.max_key_code
     pub fn iter_keycodes(&self) -> impl Iterator<Item = &RawKeycode> {
