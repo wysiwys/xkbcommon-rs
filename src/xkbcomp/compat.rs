@@ -878,11 +878,10 @@ impl CompatInfo {
 
         let mut si = self.default_interp.clone();
 
-        if def.merge == MergeMode::Default {
-            si.merge = merge;
-        } else {
-            si.merge = def.merge;
-        }
+        si.merge = match def.merge {
+            MergeMode::Default => merge,
+            _ => def.merge,
+        };
 
         si.interp.sym = def.sym;
         si.interp.match_op = pred;

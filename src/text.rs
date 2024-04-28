@@ -65,10 +65,11 @@ where
     K: Eq + Ord + phf::PhfHash + std::convert::From<&'s str>,
     B: phf_shared::PhfBorrow<K>,
 {
-    let key: K = key.into();
-    tab.get(&key)
+    tab.get(&key.into())
 }
 
+// TODO: how efficient is this/does this need to be?
+// TODO: is the reverse direction still needed?
 pub(crate) fn lookup_value<T, K, V>(
     tab: &phf::OrderedMap<K, T>,
     value: V,
@@ -79,26 +80,17 @@ where
     K: Into<&'static str> + Copy,
     V: TryInto<T>,
 {
-    let value = match value.try_into() {
-        Ok(value) => value,
-        Err(_) => return None,
-    };
-
-    if reverse {
-        for (entry_name, entry_value) in tab.entries().rev() {
-            if *entry_value == value {
-                return Some((*entry_name).into());
-            }
-        }
-    } else {
-        for (entry_name, entry_value) in tab.entries() {
-            if *entry_value == value {
-                return Some((*entry_name).into());
-            }
-        }
+    let value = value.try_into().ok()?;
+    match reverse {
+        true => tab
+            .entries()
+            .rev()
+            .find(|(_, entry_value)| **entry_value == value),
+        false => tab
+            .entries()
+            .find(|(_, entry_value)| **entry_value == value),
     }
-
-    None
+    .map(|(name, _)| (*name).into())
 }
 
 use unicase::UniCase;
@@ -275,19 +267,15 @@ impl Context {
             return "None";
         };
 
-        let name = match mods.mods.get(ndx) {
-            Some(m) => m.name,
-            None => return "",
-        };
-
-        self.xkb_atom_text(name)
+        mods.mods
+            .get(ndx)
+            .map(|_mod| self.xkb_atom_text(_mod.name))
+            .unwrap_or("")
     }
 }
 impl ActionType {
-    pub(crate) fn text(&self) -> String {
-        let name = lookup_value(&ACTION_TYPE_NAMES, *self, false);
-
-        name.unwrap_or("Private").into()
+    pub(crate) fn text(&self) -> &'static str {
+        lookup_value(&ACTION_TYPE_NAMES, *self, false).unwrap_or("Private")
     }
 }
 impl Context {
@@ -317,11 +305,7 @@ impl Context {
             .iter()
             .enumerate()
             .filter(|(i, _mod)| (mask & (1 << i)) != 0)
-            .map(|(_, _mod)| {
-                let text = self.xkb_atom_text(_mod.name);
-
-                text
-            })
+            .map(|(_, _mod)| self.xkb_atom_text(_mod.name))
             .collect::<Vec<&str>>()
             .join("+");
 

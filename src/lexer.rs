@@ -254,7 +254,7 @@ impl<'token> From<RawToken<'token>> for Token {
             RawToken::Comment => Token::Comment,
             RawToken::Whitespace => Token::Whitespace,
             RawToken::String(s) => Token::String(process_string(&s.chars().collect::<Vec<_>>())),
-            RawToken::Ident(s) => keyword_match(s),
+            RawToken::Ident(s) => Token::keyword_match(s),
             RawToken::UInt(s) => Token::UInt(s),
             RawToken::Float(f) => Token::Float(f),
             RawToken::Semi => Token::Semi,
@@ -286,7 +286,7 @@ fn hex_convert(token: &str) -> Option<u32> {
 
 // based on string processing part of _xkbcommon_lex
 fn process_string(chars: &[char]) -> String {
-    // TODO: avoid multiple copies
+    // TODO: rewrite as function of &[u8]
     let slice = &chars[1..chars.len() - 1];
 
     let mut new = String::new();
@@ -343,11 +343,11 @@ fn process_string(chars: &[char]) -> String {
     new
 }
 
-fn keyword_match(token: &str) -> Token {
-    use crate::text::lookup_key;
-    match lookup_key(&crate::keywords::KEYWORDS, token) {
-        Some(keyword) => keyword.clone(),
-        None => Token::Ident(token.into()),
+impl Token {
+    fn keyword_match(token: &str) -> Self {
+        crate::text::lookup_key(&crate::keywords::KEYWORDS, token)
+            .cloned()
+            .unwrap_or_else(|| Token::Ident(token.into()))
     }
 }
 

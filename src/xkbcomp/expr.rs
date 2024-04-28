@@ -235,14 +235,10 @@ impl ExprDef {
     }
     */
 
-    pub(crate) fn resolve_integer_lookup<T, F: FnOnce(usize, &Context) -> Option<T>>(
-        self,
-        lookup_fn: F,
-        ctx: &Context,
-    ) -> Option<i64>
+    pub(crate) fn resolve_integer_lookup<T, F>(self, lookup_fn: F, ctx: &Context) -> Option<i64>
     where
         T: Into<i64>,
-        F: Copy,
+        F: FnOnce(usize, &Context) -> Option<T> + Copy,
     {
         use ExprOpType::*;
         match self {
@@ -375,6 +371,7 @@ impl ExprDef {
             return None;
         }
 
+        // TODO: should this be zero-indexed already, just as in `resolve_level` below?
         Some(result.try_into().unwrap())
     }
 

@@ -163,20 +163,22 @@ pub(crate) struct IncludeStmt {
 
 impl IncludeStmt {
     pub(crate) fn create(_: &Context, string: &str, merge: MergeMode) -> Self {
-        let stmt = string.to_owned();
-
         let maps = parse_include_maps(string, merge)
             .into_iter()
             .map(|result| {
                 if result.is_err() {
-                    log::error!("Illegal include statement {:?}; Ignored", stmt);
+                    log::error!("Illegal include statement {:?}; Ignored", string);
                 }
                 result
             })
             .filter_map(|result| result.ok())
             .collect::<Vec<IncludeStmtPart>>();
 
-        Self { merge, maps, stmt }
+        Self {
+            merge,
+            maps,
+            stmt: string.to_owned(),
+        }
     }
 }
 
@@ -319,7 +321,7 @@ pub(crate) struct ExprString {
 impl ExprString {
     pub(crate) fn create(str: Atom) -> Result<ExprDef, AstError> {
         let op = ExprOpType::Value;
-        let value_type = ExprValueType::String; //?
+        let value_type = ExprValueType::String;
 
         Ok(ExprDef::String(Self {
             op,
@@ -337,7 +339,7 @@ pub(crate) struct ExprBoolean {
 impl ExprBoolean {
     pub(super) const fn new_true() -> Self {
         let op = ExprOpType::Value;
-        let value_type = ExprValueType::Boolean; //?
+        let value_type = ExprValueType::Boolean;
 
         Self {
             op,
@@ -347,7 +349,7 @@ impl ExprBoolean {
     }
     pub(super) const fn new_false() -> Self {
         let op = ExprOpType::Value;
-        let value_type = ExprValueType::Boolean; //?
+        let value_type = ExprValueType::Boolean;
 
         Self {
             op,
@@ -358,7 +360,7 @@ impl ExprBoolean {
 
     pub(crate) fn create(set: bool) -> Result<ExprDef, AstError> {
         let op = ExprOpType::Value;
-        let value_type = ExprValueType::Boolean; //?
+        let value_type = ExprValueType::Boolean;
 
         Ok(ExprDef::Boolean(Self {
             op,
@@ -376,7 +378,7 @@ pub(crate) struct ExprInteger {
 impl ExprInteger {
     pub(crate) fn create(ival: i64) -> Result<ExprDef, AstError> {
         let op = ExprOpType::Value;
-        let value_type = ExprValueType::Int; //?
+        let value_type = ExprValueType::Int;
 
         Ok(ExprDef::Integer(Self {
             op,
@@ -406,7 +408,7 @@ pub(crate) struct ExprKeyName {
 impl ExprKeyName {
     pub(crate) fn create(key_name: Atom) -> Result<ExprDef, AstError> {
         let op = ExprOpType::Value;
-        let value_type = ExprValueType::Keyname; //?
+        let value_type = ExprValueType::Keyname;
 
         Ok(ExprDef::KeyName(Self {
             value_type,
@@ -778,7 +780,7 @@ pub(crate) struct XkbFile {
     pub(crate) file_type: XkbFileType,
     pub(crate) name: String,
     files: Option<Vec<XkbFile>>,
-    pub(crate) defs: Vec<Decl>, //type?
+    pub(crate) defs: Vec<Decl>,
     pub(crate) flags: XkbMapFlags,
 }
 
@@ -808,15 +810,15 @@ impl XkbFile {
             (XkbFileType::Symbols, kkctgs.symbols),
         ];
 
-        let mut defs = vec![];
-        for (file_type, component) in components {
-            let include = IncludeStmt::create(ctx, &component, MergeMode::Default);
-            let decl = vec![Decl::Include(include)];
+        let defs = components
+            .iter()
+            .map(|(file_type, component)| {
+                let include = IncludeStmt::create(ctx, component, MergeMode::Default);
+                let decl = vec![Decl::Include(include)];
 
-            let file = XkbFile::create(file_type, None, None, Some(decl), XkbMapFlags::empty());
-
-            defs.push(file);
-        }
+                XkbFile::create(*file_type, None, None, Some(decl), XkbMapFlags::empty())
+            })
+            .collect();
 
         XkbFile::create(
             XkbFileType::Keymap,
