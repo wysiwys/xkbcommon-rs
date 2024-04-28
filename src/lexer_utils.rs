@@ -46,7 +46,11 @@ pub(crate) fn check_supported_char_encoding(s: &str) -> Result<&str, ()> {
         return Err(());
     }
 
-    // TODO: enforce the first character to be ASCII
+    // enforce the first character to be ASCII
+    if !first_char.is_ascii() {
+        log::error!("Unexpected non-ASCII character.");
+        return Err(());
+    }
 
     Ok(s)
 }
