@@ -1017,7 +1017,7 @@ impl Keymap {
         self.context.atom_text(_mod.name).map(|s| s.to_owned())
     }
 
-    pub fn mod_get_index<T: Borrow<str>>(&self, name: T) -> Option<ModIndex> {
+    pub fn mod_get_index(&self, name: impl Borrow<str>) -> Option<ModIndex> {
         let atom = self.context.atom_lookup(name.borrow())?;
 
         self.mods.mod_name_to_index(atom, ModType::BOTH)
@@ -1081,8 +1081,8 @@ impl Keymap {
         self.context.atom_text(led.name?).map(|s| s.into())
     }
 
-    pub fn led_get_index(&self, name: &str) -> Option<LedIndex> {
-        let atom = self.context.atom_lookup(name)?;
+    pub fn led_get_index(&self, name: impl Borrow<str>) -> Option<LedIndex> {
+        let atom = self.context.atom_lookup(name.borrow())?;
 
         for (i, led) in self.leds.iter().enumerate() {
             if let Some(led) = led {

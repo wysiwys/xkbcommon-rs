@@ -1172,8 +1172,13 @@ impl State {
     /// Returns a mask of state components that have changed as a result of the update. If nothing
     /// in the state has changed, returns 0.
     #[cfg(feature = "server")]
-    pub fn update_key(&mut self, kc: Keycode, direction: KeyDirection) -> StateComponent {
-        if self.keymap.xkb_key(kc.raw()).is_none() {
+    pub fn update_key(
+        &mut self,
+        kc: impl Into<RawKeycode>,
+        direction: KeyDirection,
+    ) -> StateComponent {
+        let kc = kc.into();
+        if self.keymap.xkb_key(kc).is_none() {
             return StateComponent::empty();
         }
 
@@ -1183,7 +1188,7 @@ impl State {
         self.set_mods = 0;
         self.clear_mods = 0;
 
-        self.filter_apply_all(kc.raw(), direction)
+        self.filter_apply_all(kc, direction)
             .expect("Could not apply filters");
 
         for bit_idx in 0..XKB_MAX_MODS {
@@ -1625,14 +1630,14 @@ impl State {
         &self,
         _type: StateComponent,
         _match: StateMatch,
-        indices: Vec<ModIndex>,
+        indices: &[ModIndex],
     ) -> Result<bool, ModIsActiveError> {
         let mut wanted: ModMask = 0;
         let num_mods = self.keymap.num_mods();
 
         for idx in indices.into_iter() {
-            if idx >= num_mods {
-                return Err(ModIsActiveError::NoSuchModIndex(idx));
+            if *idx >= num_mods {
+                return Err(ModIsActiveError::NoSuchModIndex(*idx));
             }
             wanted |= 1 << idx;
         }
@@ -1645,9 +1650,9 @@ impl State {
     /// Returns `Ok(true)` if the given modifier is active with
     /// the specified type(s), `Ok(false)` if not, or `Err(...)`
     /// if the modifier is invalid.
-    pub fn mod_name_is_active<T: Borrow<str>>(
+    pub fn mod_name_is_active(
         &self,
-        name: T,
+        name: impl Borrow<str>,
         _type: StateComponent,
     ) -> Result<bool, ModIsActiveError> {
         let name: &str = name.borrow();
@@ -1665,11 +1670,11 @@ impl State {
     /// Returns `Ok(true)` if the given modifiers are active with
     /// the specified type(s), `Ok(false)` if not, or `Err(...)`
     /// if the modifiers are invalid.
-    pub fn mod_names_are_active<T: Borrow<str>>(
+    pub fn mod_names_are_active(
         &self,
         _type: StateComponent,
         _match: StateMatch,
-        args: Vec<T>,
+        args: &[impl Borrow<str>],
     ) -> Result<bool, ModIsActiveError> {
         let mut wanted: ModMask = 0;
 
@@ -1757,10 +1762,10 @@ impl State {
     }
 
     /// Test whether a LED is active in a given keyboard state by name.
-    pub fn led_name_is_active(&self, name: &str) -> Result<bool, LedIsActiveError> {
-        let idx = match self.keymap.led_get_index(name) {
+    pub fn led_name_is_active(&self, name: impl Borrow<str>) -> Result<bool, LedIsActiveError> {
+        let idx = match self.keymap.led_get_index(name.borrow()) {
             Some(idx) => idx,
-            None => return Err(LedIsActiveError::NoSuchLedName(name.into())),
+            None => return Err(LedIsActiveError::NoSuchLedName(name.borrow().into())),
         };
 
         self.led_index_is_active(idx)
