@@ -1454,35 +1454,36 @@ impl State {
     ///
     /// This function performs Capitalization and Control keysym transformations.
     pub fn key_get_utf8(&self, kc: impl Into<RawKeycode>) -> Option<Vec<u8>> {
-        let syms;
-
         let kc = kc.into();
 
-        if let Some(sym) = self.get_one_sym_for_string(kc) {
-            syms = vec![sym];
-        } else {
-            syms = self.key_get_syms(kc);
+        let syms = match self.get_one_sym_for_string(kc) {
+            Some(sym) => vec![sym],
+            None => self.key_get_syms(kc),
+        };
+
+        if syms.is_empty() {
+            return None;
         }
 
         // make sure not to truncate in the middle of a UTF-8 sequence.
         let utf8: Vec<_> = syms
             .iter()
             .map(crate::keysyms_utf::keysym_to_utf8)
-            .collect::<Option<_>>()?;
+            .collect::<Option<Vec<_>>>()?
+            .into_iter()
+            .flatten()
+            .collect();
 
-        let utf8: Vec<_> = utf8.into_iter().flatten().collect();
-
-        // TODO: check is valid utf 8
         if !crate::utf8::is_valid_utf8(&utf8) {
             return None;
         }
 
         if utf8.len() == 1 && utf8[0] <= 127 && self.should_do_ctrl_transformation(kc) {
-            let mut buf = Vec::with_capacity(4);
-            let c = xkb_to_control(utf8[0]);
-            c.encode_utf8(&mut buf);
+            let mut buf: [u8; 4] = [0; 4];
+            let c: char = xkb_to_control(utf8[0]);
+            let utf8_str = c.encode_utf8(&mut buf);
 
-            return Some(buf);
+            return Some(utf8_str.as_bytes().into());
         }
 
         Some(utf8)
@@ -1492,7 +1493,7 @@ impl State {
     /// keyboard state.
     ///
     /// Returns the UTF-32 representation for the key, if it consists of only a single codepoint.
-    /// Otherwise, returns 0.
+    /// Otherwise, returns None.
     ///
     /// This function performs Capitalization and Control keysym transformations.
     ///

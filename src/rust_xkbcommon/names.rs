@@ -24,7 +24,6 @@
  * Author: Daniel Stone <daniel@fooishbar.org>
  */
 
-// TODO: for both of these, implement deref as str?
 pub struct ModName(pub &'static str);
 
 impl AsRef<str> for ModName {

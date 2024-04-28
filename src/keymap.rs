@@ -663,8 +663,9 @@ impl KeyBuilder {
     }
 }
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Key {
+    // TODO: methods
     pub(super) keycode: Keycode,
     pub(crate) name: Atom,
     pub(crate) explicit: ExplicitComponents,
@@ -1203,6 +1204,14 @@ impl Keymap {
 
     pub fn max_keycode(&self) -> Keycode {
         Keycode::new(self.max_key_code)
+    }
+
+    // equivalent to key_for_each
+    // TODO: should &Key be returned or left out?
+    // TODO: should the gaps between keycodes also be returned? i.e. return
+    // self.min_key_code..=self.max_key_code
+    pub fn iter_keycodes(&self) -> impl Iterator<Item = &RawKeycode> {
+        self.keys.keys()
     }
 
     pub fn key_get_name(&self, kc: impl Into<RawKeycode>) -> Option<String> {
