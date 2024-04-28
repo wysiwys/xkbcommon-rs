@@ -84,8 +84,6 @@ use crate::keymap::*;
 use crate::keysyms::*;
 use crate::rust_xkbcommon::*;
 
-use std::borrow::Borrow;
-
 pub(crate) mod errors {
     use super::*;
     use thiserror::Error;
@@ -350,8 +348,12 @@ impl State {
     /// Returns the level to use for the given key and state
     ///
     /// Returns `None` if invalid.
-    pub fn key_get_level(&self, kc: RawKeycode, layout: LayoutIndex) -> Option<LevelIndex> {
-        let key = self.keymap.xkb_key(kc)?;
+    pub fn key_get_level(
+        &self,
+        kc: impl Into<RawKeycode>,
+        layout: LayoutIndex,
+    ) -> Option<LevelIndex> {
+        let key = self.keymap.xkb_key(kc.into())?;
 
         if layout >= key.groups.len() {
             return None;
@@ -418,8 +420,8 @@ impl State {
     /// etc. into account
     ///
     /// Returns `None` if invalid.
-    pub fn key_get_layout(&self, kc: RawKeycode) -> Option<LayoutIndex> {
-        let key = self.keymap.xkb_key(kc)?;
+    pub fn key_get_layout(&self, kc: impl Into<RawKeycode>) -> Option<LayoutIndex> {
+        let key = self.keymap.xkb_key(kc.into())?;
 
         wrap_group_into_range(
             self.components.group.try_into().unwrap(),
@@ -1296,8 +1298,8 @@ impl State {
     /// to handle this case, you can use [State::key_get_one_sym()] for a simpler interface.
     ///
     /// This function does not perform any keysym transformations.
-    pub fn key_get_syms(&self, kc: Keycode) -> Vec<Keysym> {
-        let kc_raw = kc.raw();
+    pub fn key_get_syms(&self, kc: impl Into<RawKeycode>) -> Vec<Keysym> {
+        let kc_raw = kc.into();
 
         let layout = match self.key_get_layout(kc_raw) {
             Some(layout) => layout,
@@ -1309,7 +1311,7 @@ impl State {
             None => return vec![],
         };
 
-        match self.keymap.key_get_syms_by_level(kc, layout, level) {
+        match self.keymap.key_get_syms_by_level(kc_raw, layout, level) {
             Ok(syms) => syms,
             _ => vec![],
         }
@@ -1377,7 +1379,8 @@ impl State {
     /// Returns the keysym. If the key does not have exactly one keysym, returns `None`.
     ///
     /// This function performs capitalization.
-    pub fn key_get_one_sym(&self, kc: Keycode) -> Option<Keysym> {
+    pub fn key_get_one_sym(&self, kc: impl Into<RawKeycode>) -> Option<Keysym> {
+        let kc = kc.into();
         let syms = match self.key_get_syms(kc) {
             syms if syms.len() == 1 => syms,
             _ => return None,
@@ -1385,7 +1388,7 @@ impl State {
 
         let sym = syms[0];
 
-        if self.should_do_caps_transformation(kc.raw()) {
+        if self.should_do_caps_transformation(kc) {
             return Some(keysym_to_upper(&sym));
         }
 
@@ -1450,10 +1453,12 @@ impl State {
     /// state.
     ///
     /// This function performs Capitalization and Control keysym transformations.
-    pub fn key_get_utf8(&self, kc: Keycode) -> Option<Vec<u8>> {
+    pub fn key_get_utf8(&self, kc: impl Into<RawKeycode>) -> Option<Vec<u8>> {
         let syms;
 
-        if let Some(sym) = self.get_one_sym_for_string(kc.raw()) {
+        let kc = kc.into();
+
+        if let Some(sym) = self.get_one_sym_for_string(kc) {
             syms = vec![sym];
         } else {
             syms = self.key_get_syms(kc);
@@ -1472,7 +1477,7 @@ impl State {
             return None;
         }
 
-        if utf8.len() == 1 && utf8[0] <= 127 && self.should_do_ctrl_transformation(kc.raw()) {
+        if utf8.len() == 1 && utf8[0] <= 127 && self.should_do_ctrl_transformation(kc.into()) {
             let mut buf = Vec::with_capacity(4);
             let c = xkb_to_control(utf8[0]);
             c.encode_utf8(&mut buf);
@@ -1491,11 +1496,12 @@ impl State {
     ///
     /// This function performs Capitalization and Control keysym transformations.
     ///
-    pub fn key_get_utf32(&self, kc: Keycode) -> Option<u32> {
-        let sym = self.get_one_sym_for_string(kc.raw())?;
+    pub fn key_get_utf32(&self, kc: impl Into<RawKeycode>) -> Option<u32> {
+        let kc = kc.into();
+        let sym = self.get_one_sym_for_string(kc)?;
         let mut cp: u32 = crate::keysyms_utf::keysym_to_utf32(&sym)?;
 
-        if self.should_do_ctrl_transformation(kc.raw()) {
+        if self.should_do_ctrl_transformation(kc) {
             if let Ok(c) = u8::try_from(cp) {
                 cp = xkb_to_control(c) as u32;
             }
@@ -1652,10 +1658,10 @@ impl State {
     /// if the modifier is invalid.
     pub fn mod_name_is_active(
         &self,
-        name: impl Borrow<str>,
+        name: impl AsRef<str>,
         _type: StateComponent,
     ) -> Result<bool, ModIsActiveError> {
-        let name: &str = name.borrow();
+        let name: &str = name.as_ref();
         let idx = match self.keymap.mod_get_index(name) {
             Some(idx) => idx,
             // TODO: rename to InvalidModifier
@@ -1674,15 +1680,15 @@ impl State {
         &self,
         _type: StateComponent,
         _match: StateMatch,
-        args: &[impl Borrow<str>],
+        args: &[impl AsRef<str>],
     ) -> Result<bool, ModIsActiveError> {
         let mut wanted: ModMask = 0;
 
         for arg in args {
             let idx = self
                 .keymap
-                .mod_get_index(arg.borrow())
-                .ok_or(ModIsActiveError::NoSuchModName(arg.borrow().to_string()))?;
+                .mod_get_index(arg.as_ref())
+                .ok_or(ModIsActiveError::NoSuchModName(arg.as_ref().to_string()))?;
             wanted |= 1 << idx;
         }
 
@@ -1762,10 +1768,10 @@ impl State {
     }
 
     /// Test whether a LED is active in a given keyboard state by name.
-    pub fn led_name_is_active(&self, name: impl Borrow<str>) -> Result<bool, LedIsActiveError> {
-        let idx = match self.keymap.led_get_index(name.borrow()) {
+    pub fn led_name_is_active(&self, name: impl AsRef<str>) -> Result<bool, LedIsActiveError> {
+        let idx = match self.keymap.led_get_index(name.as_ref()) {
             Some(idx) => idx,
-            None => return Err(LedIsActiveError::NoSuchLedName(name.borrow().into())),
+            None => return Err(LedIsActiveError::NoSuchLedName(name.as_ref().into())),
         };
 
         self.led_index_is_active(idx)
@@ -1825,17 +1831,18 @@ impl State {
     /// Test whether a modifier is consumed by keyboard state translation for a key.
     pub fn mod_index_is_consumed2(
         &self,
-        kc: RawKeycode,
+        kc: impl Into<RawKeycode>,
         idx: ModIndex,
         mode: ConsumedMode,
     ) -> Result<bool, ModIndexIsConsumedError> {
+        let kc = kc.into();
         if idx >= self.keymap.num_mods() {
             return Err(ModIndexIsConsumedError::NoSuchModIndex(idx));
         }
         let key = self
             .keymap
             .xkb_key(kc)
-            .ok_or_else(|| ModIndexIsConsumedError::NoSuchKeyAtKeycode(kc.into()))?;
+            .ok_or_else(|| ModIndexIsConsumedError::NoSuchKeyAtKeycode(Keycode(kc)))?;
 
         let mask = (1 << idx) & self.key_get_consumed(key, mode);
 
@@ -1871,9 +1878,9 @@ impl State {
     ///
     /// # Output
     /// Returns a mask of the consumed modifiers.
-    pub fn key_get_consumed_mods2(&self, kc: Keycode, mode: ConsumedMode) -> ModMask {
+    pub fn key_get_consumed_mods2(&self, kc: impl Into<RawKeycode>, mode: ConsumedMode) -> ModMask {
         // default case for unrecognized consumed modifiers mode
-        let key = match self.keymap.xkb_key(kc.raw()) {
+        let key = match self.keymap.xkb_key(kc.into()) {
             Some(key) => key,
             None => return 0,
         };

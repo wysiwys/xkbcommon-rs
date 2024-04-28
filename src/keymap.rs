@@ -94,8 +94,6 @@ use std::collections::BTreeMap;
 pub(crate) const MOD_REAL_MASK_ALL: ModMask = 0x000000ff;
 use crate::rust_xkbcommon::*;
 
-use std::borrow::Borrow;
-
 /// Maximum number of allowed groups
 ///
 /// This limit is artificially enforced. The main
@@ -1017,8 +1015,8 @@ impl Keymap {
         self.context.atom_text(_mod.name).map(|s| s.to_owned())
     }
 
-    pub fn mod_get_index(&self, name: impl Borrow<str>) -> Option<ModIndex> {
-        let atom = self.context.atom_lookup(name.borrow())?;
+    pub fn mod_get_index(&self, name: impl AsRef<str>) -> Option<ModIndex> {
+        let atom = self.context.atom_lookup(name.as_ref())?;
 
         self.mods.mod_name_to_index(atom, ModType::BOTH)
     }
@@ -1033,19 +1031,19 @@ impl Keymap {
         self.context.atom_text(*name).map(|s| s.to_owned())
     }
 
-    pub fn layout_get_index(&self, name: &str) -> Option<LayoutIndex> {
-        let atom = self.context.atom_lookup(name)?;
+    pub fn layout_get_index(&self, name: impl AsRef<str>) -> Option<LayoutIndex> {
+        let atom = self.context.atom_lookup(name.as_ref())?;
 
         self.group_names.iter().position(|n| *n == atom)
     }
 
-    pub fn num_layouts_for_key(&self, kc: Keycode) -> Option<LayoutIndex> {
-        let key = self.xkb_key(kc.raw())?;
+    pub fn num_layouts_for_key(&self, kc: impl Into<RawKeycode>) -> Option<LayoutIndex> {
+        let key = self.xkb_key(kc.into())?;
 
         Some(key.groups.len())
     }
 
-    pub fn num_levels_for_key(&self, kc: Keycode, layout: LayoutIndex) -> LevelIndex {
+    pub fn num_levels_for_key(&self, kc: impl Into<RawKeycode>, layout: LayoutIndex) -> LevelIndex {
         let key = match self.xkb_key(kc.into()) {
             Some(key) => key,
             None => return 0,
@@ -1081,8 +1079,8 @@ impl Keymap {
         self.context.atom_text(led.name?).map(|s| s.into())
     }
 
-    pub fn led_get_index(&self, name: impl Borrow<str>) -> Option<LedIndex> {
-        let atom = self.context.atom_lookup(name.borrow())?;
+    pub fn led_get_index(&self, name: impl AsRef<str>) -> Option<LedIndex> {
+        let atom = self.context.atom_lookup(name.as_ref())?;
 
         for (i, led) in self.leds.iter().enumerate() {
             if let Some(led) = led {
@@ -1097,14 +1095,14 @@ impl Keymap {
 
     pub fn key_get_mods_for_level(
         &self,
-        kc: Keycode,
+        kc: impl Into<RawKeycode>,
         layout: LayoutIndex,
         level: LevelIndex,
         masks_size: usize,
     ) -> Option<Vec<ModMask>> {
         let mut masks_out = vec![];
 
-        let key = self.xkb_key(kc.raw())?;
+        let key = self.xkb_key(kc.into())?;
 
         let layout: i32 = layout.try_into().ok()?;
 
@@ -1160,13 +1158,14 @@ impl Keymap {
 
     pub fn key_get_syms_by_level(
         &self,
-        kc: Keycode,
+        kc: impl Into<RawKeycode>,
         layout_idx_orig: LayoutIndex,
         level: LevelIndex,
     ) -> Result<Vec<Keysym>, KeyGetSymsByLevelError> {
+        let kc = kc.into();
         let key = self
-            .xkb_key(kc.raw())
-            .ok_or(KeyGetSymsByLevelError::NoKeyForKeycode(kc))?;
+            .xkb_key(kc)
+            .ok_or(KeyGetSymsByLevelError::NoKeyForKeycode(Keycode(kc)))?;
 
         let layout_idx = layout_idx_orig
             .try_into()
@@ -1211,14 +1210,14 @@ impl Keymap {
         Keycode::new(self.max_key_code)
     }
 
-    pub fn key_get_name(&self, kc: Keycode) -> Option<String> {
-        let key = self.xkb_key(kc.raw())?;
+    pub fn key_get_name(&self, kc: impl Into<RawKeycode>) -> Option<String> {
+        let key = self.xkb_key(kc.into())?;
 
         self.context.atom_text(key.name).map(|s| s.to_string())
     }
 
-    pub fn key_by_name(&self, name: &str) -> Option<Keycode> {
-        let mut atom = self.context.atom_lookup(name);
+    pub fn key_by_name(&self, name: impl AsRef<str>) -> Option<Keycode> {
+        let mut atom = self.context.atom_lookup(name.as_ref());
 
         if let Some(atom_r) = atom {
             let ratom = self.resolve_key_alias(atom_r);
@@ -1238,8 +1237,8 @@ impl Keymap {
         None
     }
 
-    pub fn key_repeats(&self, kc: Keycode) -> bool {
-        let key = self.xkb_key(kc.raw());
+    pub fn key_repeats(&self, kc: impl Into<RawKeycode>) -> bool {
+        let key = self.xkb_key(kc.into());
 
         match key {
             Some(key) => key.repeats,
