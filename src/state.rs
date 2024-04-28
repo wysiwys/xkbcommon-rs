@@ -1055,7 +1055,7 @@ impl State {
                 }
 
                 // TODO: should led.groups be None?
-                if led.which_groups.is_empty() && led.groups != 0 {
+                if !led.which_groups.is_empty() && led.groups != 0 {
                     if led
                         .which_groups
                         .intersects(StateComponent::LAYOUT_EFFECTIVE)
@@ -1477,7 +1477,7 @@ impl State {
             return None;
         }
 
-        if utf8.len() == 1 && utf8[0] <= 127 && self.should_do_ctrl_transformation(kc.into()) {
+        if utf8.len() == 1 && utf8[0] <= 127 && self.should_do_ctrl_transformation(kc) {
             let mut buf = Vec::with_capacity(4);
             let c = xkb_to_control(utf8[0]);
             c.encode_utf8(&mut buf);
@@ -1641,7 +1641,7 @@ impl State {
         let mut wanted: ModMask = 0;
         let num_mods = self.keymap.num_mods();
 
-        for idx in indices.into_iter() {
+        for idx in indices.iter() {
             if *idx >= num_mods {
                 return Err(ModIsActiveError::NoSuchModIndex(*idx));
             }
@@ -1757,22 +1757,23 @@ impl State {
             return Err(LedIsActiveError::NoSuchLedIndex(idx));
         }
 
-        if let Some(Some(_)) = self.keymap.leds.get(idx) {
+        self.keymap
+            .leds
+            .get(idx)
+            .copied()
+            .flatten()
+            .and_then(|led| led.name)
+            .ok_or(LedIsActiveError::NoSuchLedIndex(idx))?;
 
-            // do nothing
-        } else {
-            return Err(LedIsActiveError::NoSuchLedIndex(idx));
-        }
-
-        Ok((self.components.leds & (1 << idx)) != 0)
+        Ok(self.components.leds & (1 << idx) > 0)
     }
 
     /// Test whether a LED is active in a given keyboard state by name.
     pub fn led_name_is_active(&self, name: impl AsRef<str>) -> Result<bool, LedIsActiveError> {
-        let idx = match self.keymap.led_get_index(name.as_ref()) {
-            Some(idx) => idx,
-            None => return Err(LedIsActiveError::NoSuchLedName(name.as_ref().into())),
-        };
+        let idx = self
+            .keymap
+            .led_get_index(name.as_ref())
+            .ok_or_else(|| LedIsActiveError::NoSuchLedName(name.as_ref().into()))?;
 
         self.led_index_is_active(idx)
     }
@@ -1842,7 +1843,7 @@ impl State {
         let key = self
             .keymap
             .xkb_key(kc)
-            .ok_or_else(|| ModIndexIsConsumedError::NoSuchKeyAtKeycode(Keycode(kc)))?;
+            .ok_or(ModIndexIsConsumedError::NoSuchKeyAtKeycode(Keycode(kc)))?;
 
         let mask = (1 << idx) & self.key_get_consumed(key, mode);
 
@@ -1852,17 +1853,17 @@ impl State {
     /// Same as [State::mod_index_is_consumed2()] with mode [ConsumedMode::Xkb]
     pub fn mod_index_is_consumed(
         &self,
-        kc: Keycode,
+        kc: impl Into<RawKeycode>,
         idx: ModIndex,
     ) -> Result<bool, ModIndexIsConsumedError> {
-        self.mod_index_is_consumed2(kc.raw(), idx, ConsumedMode::Xkb)
+        self.mod_index_is_consumed2(kc, idx, ConsumedMode::Xkb)
     }
 
     /// Remove consumed modifiers from a modifier mask for a key.
     ///
     #[deprecated = "Use State::get_consumed_mods2() instead"]
-    pub fn mod_mask_remove_consumed(&self, kc: Keycode, mask: ModMask) -> ModMask {
-        let key = match self.keymap.xkb_key(kc.raw()) {
+    pub fn mod_mask_remove_consumed(&self, kc: impl Into<RawKeycode>, mask: ModMask) -> ModMask {
+        let key = match self.keymap.xkb_key(kc.into()) {
             Some(key) => key,
             None => return 0,
         };
@@ -1889,7 +1890,7 @@ impl State {
     }
 
     /// Same as [State::key_get_consumed_mods2()] with mode [ConsumedMode::Xkb]
-    pub fn key_get_consumed_mods(&self, kc: Keycode) -> ModMask {
+    pub fn key_get_consumed_mods(&self, kc: impl Into<RawKeycode>) -> ModMask {
         self.key_get_consumed_mods2(kc, ConsumedMode::Xkb)
     }
 }
