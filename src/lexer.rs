@@ -253,7 +253,7 @@ impl<'token> From<RawToken<'token>> for Token {
         match raw_token {
             RawToken::Comment => Token::Comment,
             RawToken::Whitespace => Token::Whitespace,
-            RawToken::String(s) => Token::String(process_string(&s.chars().collect::<Vec<_>>())),
+            RawToken::String(s) => Token::String(process_string(s[1..s.len() - 1].as_bytes())),
             RawToken::Ident(s) => Token::keyword_match(s),
             RawToken::UInt(s) => Token::UInt(s),
             RawToken::Float(f) => Token::Float(f),
@@ -285,49 +285,54 @@ fn hex_convert(token: &str) -> Option<u32> {
 }
 
 // based on string processing part of _xkbcommon_lex
-fn process_string(chars: &[char]) -> String {
-    // TODO: rewrite as function of &[u8]
-    let slice = &chars[1..chars.len() - 1];
-
+// assumes outer quotes have been removed
+fn process_string(bytes: &[u8]) -> String {
     let mut new = String::new();
-    let len = slice.len();
+    let len = bytes.len();
     let mut i = 0;
 
     while i < len {
-        if let Some(esc) = slice.get(i..i + 2) {
+        if let Some(esc) = bytes.get(i..i + 2) {
             let mut increment = 2;
 
+            let backslash: u8 = '\\'.try_into().unwrap();
             match esc {
-                &['\\', 'n'] => new += "\n",
-                &['\\', 't'] => new += "\t",
-                &['\\', 'r'] => new += "\r",
-                &['\\', 'b'] => new += "\\",   //backslash
-                &['\\', 'f'] => new += "\x0c", // form feed page break
-                &['\\', 'v'] => new += "\x0b",
-                &['\\', 'e'] => new += "\x1b", // octal \033
-                s if s.starts_with(&['\\']) => {
-                    // get the next 1..3 characters.
-                    let octal = slice
-                        .get(i + 1..i + 4)
-                        .or_else(|| slice.get(i + 1..i + 3))
-                        .or_else(|| s.get(1..2))
-                        .unwrap()
-                        .iter()
-                        .take_while(|c| ('0'..='7').contains(c))
-                        .collect::<String>();
+                s if s.starts_with(&[backslash]) => {
+                    match s[1] as char {
+                        'n' => new += "\n",
+                        't' => new += "\t",
+                        'r' => new += "\r",
+                        'b' => new += "\\",   //backslash
+                        'f' => new += "\x0c", // form feed page break
+                        'v' => new += "\x0b",
+                        'e' => new += "\x1b", // octal \033
+                        _ => {
+                            // get the next 1..3 characters.
+                            let octal = bytes
+                                .get(i + 1..i + 4)
+                                .or_else(|| bytes.get(i + 1..i + 3))
+                                .or_else(|| s.get(1..2))
+                                .unwrap()
+                                .iter()
+                                .map(|byte| *byte as char)
+                                .take_while(|c| ('0'..='7').contains(c))
+                                .collect::<String>();
 
-                    if !octal.is_empty() {
-                        if let Ok(c) = u8::from_str_radix(&octal, 8) {
-                            if c != 0 {
-                                new.push(c as char);
+                            if !octal.is_empty() {
+                                if let Ok(c) = u8::from_str_radix(&octal, 8) {
+                                    // skip \0, \00, \000
+                                    if c != 0 {
+                                        new.push(c as char);
+                                    }
+                                }
+                                increment += octal.len() - 1;
                             }
                         }
-                        increment += octal.len() - 1;
                     }
                 }
                 // non-escape
                 s => {
-                    new.push(s[0]);
+                    new.push(s[0] as char);
                     increment = 1;
                 }
             };
@@ -335,7 +340,7 @@ fn process_string(chars: &[char]) -> String {
         } else {
             assert_eq!(i + 1, len);
 
-            new.push(slice[i]);
+            new.push(bytes[i] as char);
             i += 1;
         }
     }
@@ -355,9 +360,7 @@ impl Token {
 mod test {
 
     fn test_process_string(s: &str) -> String {
-        let chars_array = s.chars().collect::<Vec<_>>();
-
-        process_string(&chars_array)
+        process_string(&s[1..s.len() - 1].as_bytes())
     }
     use super::*;
     #[test]
@@ -366,6 +369,13 @@ mod test {
         assert_eq!(test_process_string(r#""Test\e""#), "Test\x1b");
         assert_eq!(test_process_string(r#""Test\e1""#), "Test\x1b1");
         assert_eq!(test_process_string(r#""Test\00f""#), "Testf");
+        assert_eq!(test_process_string(r#""Test\00\00\0f""#), "Testf");
+        assert_eq!(test_process_string(r#""\456Test\00\00\082""#), "Test82");
+        assert_eq!(test_process_string(r#""\456\00\00\081""#), "81");
+        assert_eq!(test_process_string(r#""\000\00\0000\00\""#), r"0\");
+        assert_eq!(test_process_string(r#""\000\00\000\00\""#), r"\");
+        assert_eq!(test_process_string(r#""\000\00\0\00""#), r"");
+        assert_eq!(test_process_string(r#""\456Test\0000""#), "Test0");
         assert_eq!(test_process_string(r#""Test\9f""#), "Testf");
         assert_eq!(test_process_string(r#""Test\1f""#), "Test\u{1}f");
         assert_eq!(test_process_string(r#""Test\1\2""#), "Test\u{1}\u{2}");
