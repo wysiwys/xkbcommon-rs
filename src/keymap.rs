@@ -1051,7 +1051,7 @@ impl Keymap {
     }
 
     pub fn num_leds(&self) -> LedIndex {
-        self.leds.len()
+        self.leds.iter().flatten().count()
     }
 
     pub fn led_get_name(&self, idx: LedIndex) -> Option<&str> {
@@ -1270,4 +1270,19 @@ pub enum KeyGetSymsByLevelError {
 
     #[error("Provided level index is invalid: {0}")]
     InvalidLevelIndex(LevelIndex),
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_num_leds() {
+        let context = Context::new(0).unwrap();
+        let mut builder = KeymapBuilder::new(context, TextV1, CompileFlags::empty());
+        builder.leds[0] = Some(Led::default());
+        builder.leds[2] = Some(Led::default());
+        let keymap = builder.build();
+        assert_eq!(keymap.num_leds(), 2);
+    }
 }
