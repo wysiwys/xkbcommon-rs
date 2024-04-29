@@ -287,8 +287,8 @@ fn hex_convert(token: &str) -> Option<u32> {
 // based on string processing part of _xkbcommon_lex
 // assumes outer quotes have been removed
 fn process_string(bytes: &[u8]) -> String {
-    let mut new = String::new();
     let len = bytes.len();
+    let mut new: Vec<u8> = Vec::with_capacity(len);
     let mut i = 0;
 
     while i < len {
@@ -299,13 +299,13 @@ fn process_string(bytes: &[u8]) -> String {
             match esc {
                 s if s.starts_with(&[backslash]) => {
                     match s[1] as char {
-                        'n' => new += "\n",
-                        't' => new += "\t",
-                        'r' => new += "\r",
-                        'b' => new += "\\",   //backslash
-                        'f' => new += "\x0c", // form feed page break
-                        'v' => new += "\x0b",
-                        'e' => new += "\x1b", // octal \033
+                        'n' => new.extend("\n".as_bytes()),
+                        't' => new.extend("\t".as_bytes()),
+                        'r' => new.extend("\r".as_bytes()),
+                        'b' => new.extend("\\".as_bytes()), //backslash
+                        'f' => new.extend("\x0c".as_bytes()), // form feed page break
+                        'v' => new.extend("\x0b".as_bytes()),
+                        'e' => new.extend("\x1b".as_bytes()), // octal \033
                         _ => {
                             // get the next 1..3 characters.
                             let octal = bytes
@@ -322,7 +322,7 @@ fn process_string(bytes: &[u8]) -> String {
                                 if let Ok(c) = u8::from_str_radix(&octal, 8) {
                                     // skip \0, \00, \000
                                     if c != 0 {
-                                        new.push(c as char);
+                                        new.push(c);
                                     }
                                 }
                                 increment += octal.len() - 1;
@@ -332,7 +332,7 @@ fn process_string(bytes: &[u8]) -> String {
                 }
                 // non-escape
                 s => {
-                    new.push(s[0] as char);
+                    new.push(s[0]);
                     increment = 1;
                 }
             };
@@ -340,12 +340,12 @@ fn process_string(bytes: &[u8]) -> String {
         } else {
             assert_eq!(i + 1, len);
 
-            new.push(bytes[i] as char);
+            new.push(bytes[i]);
             i += 1;
         }
     }
 
-    new
+    String::from_utf8(new).expect("escaped string is not valid utf8")
 }
 
 impl Token {
