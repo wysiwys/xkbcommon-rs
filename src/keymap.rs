@@ -595,7 +595,7 @@ pub(crate) struct Level {
 
 impl Level {
     pub(crate) fn num_syms(&self) -> usize {
-        self.syms.iter().filter(|s| s.is_some()).count()
+        self.syms.iter().flatten().count()
     }
 
     pub(super) fn same_syms(&self, other: &Self) -> bool {
@@ -682,10 +682,9 @@ impl Key {
             .ok_or(NumLevelsError::KeyNoSuchGroup(layout))?;
 
         // Get the corresponding type from the keymap
-        let type_index = layout.key_type;
         let _type = keymap
             .types
-            .get(type_index)
+            .get(layout.key_type)
             .ok_or(NumLevelsError::KeyNoSuchType)?;
 
         Ok(_type.num_levels)
