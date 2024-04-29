@@ -177,8 +177,7 @@ enum RawToken<'input> {
 }
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Token {
-    Comment,
-    Whitespace,
+    Skip,
     Keyname(String),
     String(String),
     Ident(String),
@@ -251,8 +250,9 @@ impl std::fmt::Display for Token {
 impl<'token> From<RawToken<'token>> for Token {
     fn from(raw_token: RawToken) -> Self {
         match raw_token {
-            RawToken::Comment => Token::Comment,
-            RawToken::Whitespace => Token::Whitespace,
+            RawToken::Comment => Token::Skip,
+            RawToken::Whitespace => Token::Skip,
+            // remove brackets and process escape codes
             RawToken::String(s) => Token::String(process_string(s[1..s.len() - 1].as_bytes())),
             RawToken::Ident(s) => Token::keyword_match(s),
             RawToken::UInt(s) => Token::UInt(s),
