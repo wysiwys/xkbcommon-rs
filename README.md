@@ -6,8 +6,6 @@ A port of [libxkbcommon](https://github.com/xkbcommon/libxkbcommon) written in s
 This crate is intended for use in a Wayland client or compositor.
 
  Corresponds to libxkbcommon version `1.7.0`.
-
- This crate is a work in progress.
  
  ### Use in client application
 
