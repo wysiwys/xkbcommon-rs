@@ -3,7 +3,7 @@
 
 A port of [libxkbcommon](https://github.com/xkbcommon/libxkbcommon) in safe Rust.
 
-This crate is intended for use in a Wayland client or compositor.
+This crate is intended for use in a Wayland client. Compositor-side functionality is also provided. 
 
  Corresponds to libxkbcommon version `1.7.0`.
  
