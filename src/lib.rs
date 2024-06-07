@@ -83,8 +83,12 @@
 //!
 //! A port of `libxkbcommon` version `1.7.0` in safe Rust.
 //!
+//! ### Use in Wayland client
 //! This crate is intended for use within a Wayland client written in Rust. It provides `Send + Sync` implementations of [Keymap] and [State].
-//! # Example
+//!
+//!
+//!
+//! ### Example
 //!
 //! To set up the keymap/state on the Wayland client side:
 //! ```rust
@@ -100,7 +104,7 @@
 //!
 //! ```
 //!
-//! To get syms and update the state on the client side:
+//! To get keysyms and update the state on the client side:
 //!
 //!
 //! ```rust
@@ -134,7 +138,7 @@
 //!
 //! # Environment variables
 //!
-//! The user may set some environment variables which affect the library:
+//! As in `libxkbcommon`, the user may set some environment variables which affect the library:
 //!
 //! `XKB_CONFIG_ROOT`, `XKB_CONFIG_EXTRA_PATH`, `XDG_CONFIG_DIR`, `HOME` - see [include-path].
 //! `XKB_DEFAULT_RULES`, `XKB_DEFAULT_MODEL`, `XKB_DEFAULT_LAYOUT`, `XKB_DEFAULT_VARIANT`,
@@ -186,13 +190,12 @@ pub mod xkb_context {
     //! let context = Context::new(0).unwrap();
     //! ```
     //! The [Context] is passed to a Keymap's constructor to initialize the keymap.
-    /// Opaque top-level library context object.
+    /// A [Keymap](crate::Keymap)'s context object.
     ///
-    /// The context contains various general library data and state, like
-    /// include paths.
+    /// The context contains various general data and state, like include paths.
     ///
-    /// Objects are created in a specific context, and multiple contexts may coexist simultaneously.
-    /// Objects from different contexts are completely separated and do not share any memory or state.
+    /// ### Differences from libxkbcommon
+    /// In `libxkbcommon`, multiple objects may share one context. This feature has yet to be implemented in this crate, so for now each [Keymap](crate::Keymap) has its own [Context], which is not shared by other keymaps.
     ///
     pub use super::context::Context;
 
@@ -280,13 +283,23 @@ pub mod xkb_state {
     //!     0, 0, group as usize);
     //! ```
     //!
-    /// Opaque keyboard state object.
+    /// Keyboard state object.
     ///
+    /// ### Creating a [State] from a [Keymap](crate::Keymap)
+    /// ```rust
+    /// let mut state = State::new(keymap);
+    /// ```
     /// State objects contain the active state of a keyboard
     /// (or keyboards), such
     /// as the currently effective layout and the active modifiers.
     /// It acts as a simple state machine, wherein key presses
     /// and releases are the input, and key symbols (keysyms) are the output.
+    ///
+    /// ### Usage in Wayland
+    /// On the Wayland client side, a local keyboard State is maintained by the client, which is
+    /// updated to reflect changes in the compositor's state. These changes are communicated over
+    /// the Wayland protocol. To update the client's [State] to reflect these changes, the
+    /// functions in the `client` feature are used.
     pub use super::state::State;
 
     pub use super::rust_xkbcommon::KeyDirection;
@@ -356,7 +369,7 @@ pub mod xkb_state {
 }
 pub use xkb_state::State;
 
-/// A number used to represent a physical key on a keyboard.
+/// A [Keycode](crate::keycode::Keycode) is a number used to represent a physical key on a keyboard.
 ///
 /// A standard PC-compatible keyboard might have 102 keys.
 /// An appropriate keymap would assign each of them a keycode,
@@ -383,6 +396,14 @@ pub use xkb_state::State;
 /// Historically, the XKB protocol restricts these names to at most 4 (ASCII) characters,
 /// but this library does not share this limit.
 pub mod keycode {
+    //! The [Keycode](crate::keycode::Keycode) struct, which is used to update the [State].
+    //!
+    //! ### Usage in [State]:
+    //! ```rust
+    //! state.update_key(keycode_A, KeyDirection::Down);
+    //! state.update_key(keycode_A, KeyDirection::Up);
+    //!
+    //! ```
     pub use super::rust_xkbcommon::RawKeycode;
 
     /// A wrapper struct for [RawKeycode].
@@ -400,11 +421,12 @@ lalrpop_mod!(pub(crate) parser);
 // keywords list generated in build.rs
 mod keywords;
 
-/// Re-export of [`xkeysym`]
+/// Additional constants and functions for [`xkeysym`] keysyms
 pub mod keysym {
     /// Re-export of [`xkeysym::NO_SYMBOL`]:
     pub use xkeysym::NO_SYMBOL;
 
+    /*
     /// Re-export of [`xkeysym::Keysym`]
     ///
     /// A keycode is a number used to represent the symbols generated from a key on a keyboard.
@@ -425,18 +447,29 @@ pub mod keysym {
     ///
     pub use xkeysym::Keysym;
 
+    */
     /// Get the name of a keysym.
     ///
-    /// For a description of how keysyms are named, see [Keysym].
+    /// For a description of how keysyms are named, see [xkeysym::Keysym].
     ///
     pub use super::keysyms::keysym_get_name;
 
+    /// Determines whether a keysym is a keypad symbol.
     pub use super::keysyms::keysym_is_keypad;
 
+    /// Determines whether a keysym is lowercase.
     pub use super::keysyms::keysym_is_lower;
+
+    /// Determines whether a keysym is a modifier.
     pub use super::keysyms::keysym_is_modifier;
+
+    /// Determines whether a keysym is uppercase.
     pub use super::keysyms::keysym_is_upper;
+
+    /// Converts a keysym to its lowercase representation.
     pub use super::keysyms::keysym_to_lower;
+
+    /// Converts a keysym to its uppercase representation.
     pub use super::keysyms::keysym_to_upper;
 
     /// The flags for [keysym_from_name()].
