@@ -26,14 +26,14 @@ debug = false
 
 [dependencies]
 
-# For string lookup
+# For atom table
 indexmap = "2.2.6"
 
 thiserror = "1.0.58"
 log = "0.4.21"
 bitflags = "2.4.2"
 
-xkeysym = { version = "0.2.1"}
+xkeysym = "0.2.1"
 
 # for AccessFlags
 nix = { version = "0.28.0", features = ["fs"] }
