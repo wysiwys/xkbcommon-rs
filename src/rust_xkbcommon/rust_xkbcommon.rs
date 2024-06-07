@@ -328,7 +328,7 @@ impl TryFrom<u32> for CompileFlags {
     }
 }
 
-/// The possible keymap formats.
+/// The possible keymap formats. Currently, only `TextV1` is supported.
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum KeymapFormat {

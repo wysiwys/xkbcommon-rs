@@ -176,6 +176,15 @@ pub mod error {
     pub use super::errors::{context, keymap, state};
 }
 pub mod xkb_context {
+    //! The module containing the Keymap's [Context] struct and its associated options.
+    //!
+    //! The [Context] contains general library data and state, and is passed to a Keymap's
+    //! constructor.
+    //! ### Usage
+    //! ```rust
+    //! let context = Context::new(0).unwrap();
+    //! ```
+    //! The [Context] is passed to a Keymap's constructor to initialize the keymap.
     /// Opaque top-level library context object.
     ///
     /// The context contains various general library data and state, like
@@ -191,6 +200,37 @@ pub mod xkb_context {
 pub use xkb_context::Context;
 
 pub mod xkb_keymap {
+
+    //! The module containing the [Keymap] struct and its associated options and metadata.
+    //!
+    //! The keymap is initialized from e.g. a string representation of the keymap passed by the
+    //! Wayland server.
+    //!
+    //! ### Creating a [Keymap]
+    //! ```rust
+    //! let keymap = Keymap::new_from_string(
+    //!     context,
+    //!     string, /* Read from the OwnedFd provided by the Wayland compositor */
+    //!     KeymapFormat::TextV1,
+    //!     0 // compile flags
+    //! ).unwrap();
+    //! ```
+    //! It is standard to pass [KeymapFormat::TextV1] and `0` or
+    //! `CompileFlags::empty()` to this function.
+    //!
+    //! A keymap can also be generated from RMLVO:
+    //! ```rust
+    //! let keymap = Keymap::new_from_names(
+    //!     context,
+    //!     Some(rmlvo),
+    //!     0 // compile flags
+    //! ).unwrap();
+    //!
+    //! ```
+    //! ### Creating a State from a [Keymap]
+    //! ```rust
+    //! let mut state = State::new(keymap);
+    //! ```
     /// Opaque compiled keymap object.
     ///
     /// The keymap object holds all of the static keyboard information obtained from compiling XKB
@@ -216,7 +256,29 @@ pub use xkb_keymap::Keymap;
 pub use xkb_keymap::KeymapFormat;
 
 pub mod xkb_state {
-
+    //! The module containing the [State] and its associated metadata and options.
+    //! ### Creating a [State] from a Keymap
+    //! ```rust
+    //! let mut state = State::new(keymap);
+    //! ```
+    //! ### Use in a Wayland client
+    //! To update the [State] on the Wayland client side, use the functions enabled by the `client`
+    //! feature. For example, in Cargo.toml:
+    //! ```toml
+    //! [dependencies]
+    //! xkbcommon-rs = { version = "0.1.0", features = ["client"] }
+    //! ```
+    //! Then to update the state based on data passed by the compositor:
+    //! ```rust
+    //! // Get syms before updating state
+    //! let sym = state.key_get_one_sym(keycode)?;
+    //!
+    //! // Update state with the parameters provided by the wl_keyboard::Event::Modifiers{..} event
+    //! state.update_mask(
+    //!     mods_depressed, mods_latched, mods_locked,
+    //!     0, 0, group as usize);
+    //! ```
+    //!
     /// Opaque keyboard state object.
     ///
     /// State objects contain the active state of a keyboard
