@@ -1,6 +1,7 @@
 [package]
 name = "xkbcommon-rs"
 version = "0.1.0"
+authors = ["wysiwys"]
 edition = "2021"
 license-file = "LICENSE"
 keywords = ["xkb", "xkbcommon", "libxkbcommon", "wayland", "keymap"]

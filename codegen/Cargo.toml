@@ -1,9 +1,12 @@
 [package]
 name = "xkbcommon-rs-codegen"
 version = "0.1.0"
+authors = ["wysiwys"]
 edition = "2021"
+license = "MIT"
 repository = "https://github.com/wysiwys/xkbcommon-rs"
 description = "codegen for the `xkbcommon-rs` crate. Not meant as a standalone crate"
+
 
 [dependencies]
 unicase = "2.7.0"
