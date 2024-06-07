@@ -7,9 +7,11 @@ This crate is intended for use in a Wayland client or compositor.
 
  Corresponds to libxkbcommon version `1.7.0`.
  
- ### Use in client application
+ ## Use in Wayland client application
 
- Setting up the keymap and the state:
+The Keymap and State provided by this crate can be used to represent keyboard state in a Wayland client. For example, `xkbcommon-rs` can be used in combination with Smithay's `wayland-client` crate.
+
+ ### Setting up the keymap and the state
  ```rust
  use xkbcommon_rs::*;
 
@@ -23,7 +25,7 @@ This crate is intended for use in a Wayland client or compositor.
 
  ```
 
- Getting keyboard symbols and updating the state:
+ ### Getting keyboard symbols and updating the state
 
 
  ```rust
