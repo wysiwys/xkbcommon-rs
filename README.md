@@ -1,11 +1,11 @@
-### rust_xkbcommon
-
+# xkbcommon-rs
 
 A port of [libxkbcommon](https://github.com/xkbcommon/libxkbcommon) in safe Rust.
 
-This crate is intended for use in a Wayland client. Compositor-side functionality is also provided. 
-
- Corresponds to libxkbcommon version `1.7.0`.
+In Cargo.toml:
+```
+xkbcommon-rs = "0.1.0"
+```
  
  ## Use in Wayland client application
 
@@ -40,3 +40,8 @@ The Keymap and State provided by this crate can be used to represent keyboard st
 
  For more information on using `State::update_mask()` in a Wayland client, see <https://wayland-book.com/seat/keyboard.html>.
 
+## Info
+
+This crate is intended for use in a Wayland client. Compositor-side functionality is also provided. 
+
+ Corresponds to libxkbcommon version `1.7.0`.
