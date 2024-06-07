@@ -2,6 +2,7 @@
 name = "xkbcommon-rs-codegen"
 version = "0.1.0"
 edition = "2021"
+description = "codegen for the `xkbcommon-rs` crate. Not meant as a standalone crate"
 
 [dependencies]
 unicase = "2.7.0"
