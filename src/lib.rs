@@ -92,7 +92,7 @@
 //!
 //! To set up the keymap/state on the Wayland client side:
 //! ```rust
-//! use rust_xkbcommon::*;
+//! use xkbcommon_rs::*;
 //!
 //! let keymap = Keymap::new_from_string(
 //!     Context::new(0).unwrap(),

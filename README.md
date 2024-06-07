@@ -1,7 +1,7 @@
 ### rust_xkbcommon
 
 
-A port of [libxkbcommon](https://github.com/xkbcommon/libxkbcommon) written in safe Rust.
+A port of [libxkbcommon](https://github.com/xkbcommon/libxkbcommon) in safe Rust.
 
 This crate is intended for use in a Wayland client or compositor.
 
@@ -11,7 +11,7 @@ This crate is intended for use in a Wayland client or compositor.
 
  Setting up the keymap and the state:
  ```rust
- use rust_xkbcommon::*;
+ use xkbcommon_rs::*;
 
  let keymap = Keymap::new_from_string(
      Context::new(0).unwrap(),
