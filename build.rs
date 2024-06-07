@@ -21,18 +21,21 @@
  * DEALINGS IN THE SOFTWARE.
  *
  */
-use std::path::Path;
+//use std::path::Path;
 
-use xkbcommon_rs_codegen::*;
+//use xkbcommon_rs_codegen::*;
 
 fn main() {
     // converts all lalrpop files into .rs files
     lalrpop::process_root().unwrap();
 
+    // TODO: enable as feature
+    /*
     make_config(&Path::new("src").join("config.rs"));
 
     make_keywords_file(
         &Path::new("src").join("keywords.csv"),
         &Path::new("src").join("keywords.rs"),
     );
+    */
 }
