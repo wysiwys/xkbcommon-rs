@@ -65,9 +65,10 @@ xkbcommon = "0.7.0"
 criterion = { version = "0.5.1", features=["html_reports"] }
 simplelog = "0.12.2"
 
-[[bench]]
-name = "rulescomp"
-harness = false
+
+#[[bench]]
+#name = "rulescomp"
+#harness = false
 
 [package.metadata.docs.rs]
 all-features = true
