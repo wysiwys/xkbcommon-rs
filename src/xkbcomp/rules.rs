@@ -1143,10 +1143,10 @@ impl ComponentNames {
             let result = matcher.read_rules_file(0, file, path.clone());
 
             if result.is_err()
-            || matcher.kccgst.get(&RulesKccgst::Keycodes).is_none() //keycodes 
-            || matcher.kccgst.get(&RulesKccgst::Types).is_none() //types
-            || matcher.kccgst.get(&RulesKccgst::Compat).is_none() //compat
-            || matcher.kccgst.get(&RulesKccgst::Symbols).is_none()
+            || !matcher.kccgst.contains_key(&RulesKccgst::Keycodes) //keycodes 
+            || !matcher.kccgst.contains_key(&RulesKccgst::Types) //types
+            || !matcher.kccgst.contains_key(&RulesKccgst::Compat) //compat
+            || !matcher.kccgst.contains_key(&RulesKccgst::Symbols)
             //symbols
             {
                 log::error!(

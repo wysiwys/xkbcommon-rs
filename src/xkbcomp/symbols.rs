@@ -321,7 +321,7 @@ impl GroupInfo {
                 if from_level.num_syms() == 0 {
                     // empty for consistency with other comparisons
                 } else if into_level.num_syms() == 0 {
-                    into_level.syms = from_level.syms.clone();
+                    into_level.syms.clone_from(&from_level.syms);
                 } else if from_level.syms != into_level.syms {
                     if report {
                         log::warn!("{:?}: Multiple symbols for level {}/group {} on key {}; Using {}, ignoring {}",
@@ -337,7 +337,7 @@ impl GroupInfo {
                             action: Action::None,
                             syms: vec![],
                         };
-                        into_level.syms = from_level.syms.clone();
+                        into_level.syms.clone_from(&from_level.syms);
                         from_level.syms = vec![];
                     }
                 }
@@ -731,11 +731,7 @@ impl KeyInfo {
                     CompileSymbolsError::IllegalGroupIndex
                 })?;
 
-            if self.groups.get(&group).is_none() {
-                let groupi = GroupInfo::new();
-                self.groups.insert(group, groupi);
-            }
-
+            self.groups.entry(group).or_insert_with(GroupInfo::new);
             Ok(group)
         }
     }
@@ -1614,7 +1610,7 @@ impl KeyInfo {
                     builder.context.xkb_atom_text(type_name),
                     num_levels,
                     self.info_text(&builder.context),
-                    self.groups[&i].levels.len()
+                    self.groups[i].levels.len()
                 );
 
                 // ClearLevelInfo

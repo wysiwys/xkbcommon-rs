@@ -357,11 +357,7 @@ impl TryFrom<u32> for KeymapFormat {
     }
 }
 
-pub(crate) trait KeymapFormatType: Into<KeymapFormat> {
-    fn new() -> Self
-    where
-        Self: Sized;
-}
+pub(crate) trait KeymapFormatType: Into<KeymapFormat> {}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct TextV1;
@@ -373,21 +369,13 @@ impl From<TextV1> for KeymapFormat {
         KeymapFormat::TextV1
     }
 }
-impl KeymapFormatType for TextV1 {
-    fn new() -> Self {
-        TextV1 {}
-    }
-}
+impl KeymapFormatType for TextV1 {}
 impl From<OriginalFormat> for KeymapFormat {
     fn from(_: OriginalFormat) -> Self {
         KeymapFormat::OriginalFormat
     }
 }
-impl KeymapFormatType for OriginalFormat {
-    fn new() -> Self {
-        OriginalFormat {}
-    }
-}
+impl KeymapFormatType for OriginalFormat {}
 
 /// Specifies the direction of key (press/release)
 #[derive(PartialEq, Clone, Copy, Debug)]

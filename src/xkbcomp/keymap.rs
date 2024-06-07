@@ -262,7 +262,7 @@ impl Keymap {
             }
         }
 
-        if !self.keys[&kc]
+        if !self.keys[kc]
             .explicit
             .intersects(ExplicitComponents::VMODMAP)
         {
