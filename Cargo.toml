@@ -6,9 +6,7 @@ license-file = "LICENSE"
 keywords = ["xkb", "xkbcommon", "libxkbcommon", "wayland", "keymap"]
 exclude = ["README.md", ".gitignore", "benches/", "keysym_map_gen/", "scripts/", "src/test/", "test/", "target/"]
 description = "a port of libxkbcommon in safe Rust"
-
-[lib]
-crate-type = ["rlib"]
+repository = "https://github.com/wysiwys/xkbcommon-rs"
 
 [workspace]
 members = ["codegen", "keysym_map_gen"]
