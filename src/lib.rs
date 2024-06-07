@@ -144,7 +144,7 @@
 #![allow(clippy::module_inception)]
 #![allow(clippy::unwrap_or_default)]
 #![allow(clippy::absurd_extreme_comparisons)]
-#![crate_name = "rust_xkbcommon"]
+#![crate_name = "xkbcommon_rs"]
 #![forbid(unsafe_code)]
 mod keysyms_utf;
 // generated in project 26

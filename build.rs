@@ -23,7 +23,7 @@
  */
 use std::path::Path;
 
-use xkb_rust_codegen::*;
+use xkbcommon_rs_codegen::*;
 
 fn main() {
     // converts all lalrpop files into .rs files
