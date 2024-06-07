@@ -1,5 +1,8 @@
 # xkbcommon-rs
 
+[![Crates.io](https://img.shields.io/crates/v/xkbcommon-rs.svg)](https://crates.io/crates/xkbcommon-rs)
+[![docs.rs](https://img.shields.io/docsrs/xkbcommon-rs/latest)](https://docs.rs/xkbcommon-rs/latest/xkbcommon_rs/)
+
 A port of [libxkbcommon](https://github.com/xkbcommon/libxkbcommon) in safe Rust.
 
 In Cargo.toml:
