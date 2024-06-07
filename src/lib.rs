@@ -172,11 +172,12 @@ mod utf8;
 mod config;
 
 pub mod error {
+    //! Various error types for the crate.
 
     pub use super::errors::{context, keymap, state};
 }
 pub mod xkb_context {
-    //! The module containing the Keymap's [Context] struct and its associated options.
+    //! The module containing the [Keymap](crate::Keymap)'s [Context] struct and its associated options.
     //!
     //! The [Context] contains general library data and state, and is passed to a Keymap's
     //! constructor.
@@ -227,11 +228,13 @@ pub mod xkb_keymap {
     //! ).unwrap();
     //!
     //! ```
-    //! ### Creating a State from a [Keymap]
+    //! ### Creating a [State](crate::State) from a [Keymap]
     //! ```rust
     //! let mut state = State::new(keymap);
     //! ```
-    /// Opaque compiled keymap object.
+
+    /// An immutable representation of a keymap compiled from an XKB file. Used by the
+    /// [State](crate::State) struct.
     ///
     /// The keymap object holds all of the static keyboard information obtained from compiling XKB
     /// files.
@@ -242,12 +245,10 @@ pub mod xkb_keymap {
 
     pub use super::rust_xkbcommon::CompileFlags;
 
-    /// Names to compile a keymap with, also known as RMLVO.
+    /// An alternative format that can be used to initialize a [Keymap]. RMLVO = Rules, Model,
+    /// Layout, Variant, Options
     ///
-    /// The names are the common configuration values by which a user picks a keymap.
-    ///
-    /// If a `None` is passed to [Keymap::new_from_names()], then each field is taken to be `None`.
-    /// You should prefer passing `None` instead of choosing your own defaults.
+    /// You should prefer passing `None` to [Keymap::new_from_names()] instead of choosing your own defaults.
     pub use super::rust_xkbcommon::RuleNames;
 
     pub use super::rust_xkbcommon::KeymapFormat;
@@ -257,7 +258,7 @@ pub use xkb_keymap::KeymapFormat;
 
 pub mod xkb_state {
     //! The module containing the [State] and its associated metadata and options.
-    //! ### Creating a [State] from a Keymap
+    //! ### Creating a [State] from a [Keymap](crate::Keymap)
     //! ```rust
     //! let mut state = State::new(keymap);
     //! ```

@@ -29,15 +29,17 @@ pub(crate) use crate::message_codes::*;
 use crate::rust_xkbcommon::*;
 
 pub mod context {
-
+    //! Errors for the [Context](crate::Context) struct.
     pub use crate::context::errors::*;
 }
 pub mod state {
+    //! Errors for the [State](crate::State) struct.
     pub use crate::state::errors::*;
 }
 
 pub mod keymap {
 
+    //! Errors for the [Keymap](crate::Keymap) struct.
     pub use super::KeymapCompileError;
 }
 
