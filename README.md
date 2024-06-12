@@ -47,4 +47,4 @@ The Keymap and State provided by this crate can be used to represent keyboard st
 
 This crate is intended for use in a Wayland client. Compositor-side functionality is also provided. 
 
- Corresponds to libxkbcommon version `1.7.0`.
+ Corresponds to libxkbcommon version `1.7.0`. This crate strives to be as close a reimplementation of the original `libxkbcommon` library as possible, although some features are not implemented yet.
