@@ -5,6 +5,8 @@
 
 A port of [libxkbcommon](https://github.com/xkbcommon/libxkbcommon) in safe Rust. Notably, this crate provides `Send + Sync` types for Keymap and State.
 
+This safe Rust port intends to provide an alternative to the existing C bindings crates, e.g. for projects that are built entirely in safe Rust. It aims to release versions that match the releases of the original `libxkbcommon`.
+
 In Cargo.toml:
 ```
 xkbcommon-rs = "0.1.0"
