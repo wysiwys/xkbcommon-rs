@@ -270,7 +270,7 @@ pub mod xkb_state {
     //! feature. For example, in Cargo.toml:
     //! ```toml
     //! [dependencies]
-    //! xkbcommon-rs = { version = "1.7.0", features = ["client"] }
+    //! xkbcommon-rs = { version = "0.1.1", features = ["client"] }
     //! ```
     //! Then to update the state based on data passed by the compositor:
     //! ```rust
