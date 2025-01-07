@@ -9,7 +9,7 @@ This safe Rust port intends to provide an alternative to the existing C bindings
 
 In Cargo.toml:
 ```
-xkbcommon-rs = "0.1.0"
+xkbcommon-rs = "1.7.0"
 ```
  
  ## Use in Wayland client application
