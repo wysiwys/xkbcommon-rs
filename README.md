@@ -54,5 +54,5 @@ The current version corresponds to libxkbcommon version `1.7.0`. This crate stri
  ## Version table
 | `xkbcommon-rs` version | `libxkbcommon` version |
 |------------------------|------------------------|
-| 0.1.1                  | 1.7.0                  |
+| 0.1.1 (unreleased)     | 1.7.0                  |
 | 0.1.0                  | 1.7.0                  |
