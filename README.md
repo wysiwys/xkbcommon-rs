@@ -51,6 +51,10 @@ This crate is intended for use in a Wayland client. Compositor-side functionalit
 
 The current version corresponds to libxkbcommon version `1.7.0`. This crate strives to be as close a reimplementation of the original `libxkbcommon` library as possible, although some features are not implemented yet.
 
+## Contributing
+
+Feedback and PRs are welcome.
+
  ## Version table
 | `xkbcommon-rs` version | `libxkbcommon` version |
 |------------------------|------------------------|
