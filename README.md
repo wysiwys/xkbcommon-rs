@@ -49,7 +49,9 @@ The Keymap and State provided by this crate can be used to represent keyboard st
 
 This crate is intended for use in a Wayland client. Compositor-side functionality is also provided. 
 
-The current version corresponds to libxkbcommon version `1.7.0`. This crate strives to be as close a reimplementation of the original `libxkbcommon` library as possible, although some features are not implemented yet.
+The current version corresponds to libxkbcommon version `1.7.0`. Version `1.8.0` is currently under development.
+
+ This crate strives to be as close a reimplementation of the original `libxkbcommon` library as possible, although some features are not implemented yet.
 
 ## Contributing
 
@@ -58,5 +60,6 @@ Feedback and PRs are welcome.
  ## Version table
 | `xkbcommon-rs` version | `libxkbcommon` version |
 |------------------------|------------------------|
+| 0.2.0 (unreleased)     | 1.8.0                  |
 | 0.1.1 (unreleased)     | 1.7.0                  |
 | 0.1.0                  | 1.7.0                  |
