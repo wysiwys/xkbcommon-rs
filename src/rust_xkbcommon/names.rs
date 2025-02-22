@@ -49,7 +49,6 @@ impl ModName {
     pub const MOD3: ModName = ModName("Mod3");
     pub const MOD4: ModName = ModName("Mod4");
     pub const MOD5: ModName = ModName("Mod5");
-    
 
     // Usual virtual modifier mappings to real modifiers
     pub const ALT: ModName = ModName("Mod1");
@@ -73,7 +72,6 @@ impl VModName {
     pub const NUM: ModName = ModName("NumLock");
     pub const SCROLL: ModName = ModName("ScrollLock");
     pub const SUPER: ModName = ModName("Super");
-
 }
 
 impl LedName {
