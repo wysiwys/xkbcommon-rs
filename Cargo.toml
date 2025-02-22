@@ -1,6 +1,6 @@
 [package]
 name = "xkbcommon-rs"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["wysiwys"]
 edition = "2021"
 license-file = "LICENSE"
