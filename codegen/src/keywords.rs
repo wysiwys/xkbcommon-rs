@@ -79,7 +79,7 @@ use unicase::*;"#
                 strings.push(key.to_owned());
             }
             let value = format!("Token::{}", value);
-            map_builder.entry(UniCase::ascii(key.to_owned()), &value);
+            map_builder.entry(UniCase::unicode(key.to_owned()), &value);
         } else {
             panic!("Token could not be read");
         }
