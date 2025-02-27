@@ -89,7 +89,7 @@ use unicase::*;"#
     writeln!(
         &mut out_file,
         "
-        pub(crate) static KEYWORDS: phf::OrderedMap<UniCase<&'static str>, Token> = {}\n;\n",
+pub(crate) static KEYWORDS: phf::OrderedMap<UniCase<&'static str>, Token> = {}\n;\n",
         map_builder.build()
     )
     .unwrap();
