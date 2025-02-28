@@ -1,6 +1,12 @@
 # Changelog
 
-# 0.1.1 (2025-03-01)
+# 0.1.2 (2025-02-28)
+
+## Fixes
+
+Fix README.md
+
+# 0.1.1 (2025-02-28)
 
 Patch to minor version corresponding to libxkbcommon 1.7.0.
 
