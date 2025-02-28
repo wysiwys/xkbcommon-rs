@@ -63,7 +63,7 @@ strum_macros = "0.26.2"
 
 [build-dependencies]
 lalrpop = "0.20.0"
-xkbcommon-rs-codegen = { path = "codegen", version = "0.1.0" }
+xkbcommon-rs-codegen = { path = "codegen", version = "0.1.1" }
 
 [dev-dependencies]
 icu_casemap = "1.4.0"

@@ -9,7 +9,7 @@ This safe Rust port intends to provide an alternative to the existing C bindings
 
 In Cargo.toml:
 ```
-xkbcommon-rs = "0.1.2"
+xkbcommon-rs = "0.2.0"
 ```
  
  ## Use in Wayland client application
@@ -49,7 +49,7 @@ The Keymap and State provided by this crate can be used to represent keyboard st
 
 This crate is intended for use in a Wayland client. Compositor-side functionality is also provided. 
 
-The current version corresponds to libxkbcommon version `1.7.0`. Version `1.8.0` is currently under development.
+The current version corresponds to libxkbcommon version `1.8.0`.
 
  This crate strives to be as close a reimplementation of the original `libxkbcommon` library as possible, although some features are not implemented yet.
 
@@ -60,7 +60,7 @@ Feedback and PRs are welcome.
  ## Version table
 | `xkbcommon-rs` version | `libxkbcommon` version |
 |------------------------|------------------------|
-| 0.2.0 (unreleased)     | 1.8.0                  |
+| 0.2.0                  | 1.8.0                  |
 | 0.1.2                  | 1.7.0                  |
 | 0.1.1                  | 1.7.0                  |
 | 0.1.0                  | 1.7.0                  |

@@ -54,8 +54,8 @@ use crate::atom::Atom;
 use crate::context::Context;
 use crate::errors::*;
 
-use crate::keymap::XKB_MAX_LEDS;
 use crate::keymap::{KeyAlias, KeyBuilder, KeymapBuilder, Led};
+use crate::keymap::{XKB_KEYCODE_MAX_IMPL, XKB_MAX_LEDS};
 
 use crate::rust_xkbcommon::*;
 
@@ -212,6 +212,20 @@ impl KeyNamesInfo {
     ) -> Result<(), CompileKeycodesError> {
         let verbosity = ctx.get_log_verbosity();
         let report = report && (same_file && verbosity > 0) || verbosity > 7;
+
+        // check keycode not too huge for libxkbcommon continuous array
+        // ( not necessarily relevant for Rust, but kept to conform with original)
+        if kc > XKB_KEYCODE_MAX_IMPL {
+            let error = XkbMessageCode::NoId;
+            log::error!(
+                "{:?}: Keycode too big: must be < {}, got {}; Key ignored",
+                error,
+                XKB_KEYCODE_MAX_IMPL,
+                kc
+            );
+
+            return Err(CompileKeycodesError::KeycodeOutOfBounds);
+        }
 
         // update min/max key names
         self.min_key_code = u32::min(self.min_key_code, kc);

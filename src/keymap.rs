@@ -106,8 +106,8 @@ use crate::rust_xkbcommon::*;
 ///
 //
 pub const XKB_MAX_GROUPS: u8 = 4;
-pub(crate) const XKB_MAX_MODS: usize = std::mem::size_of::<ModMask>() * 8;
-pub(crate) const XKB_MAX_LEDS: usize = std::mem::size_of::<LedMask>() * 8;
+pub(crate) const XKB_MAX_MODS: usize = std::mem::size_of::<ModMask>() * u8::BITS as usize;
+pub(crate) const XKB_MAX_LEDS: usize = std::mem::size_of::<LedMask>() * u8::BITS as usize;
 
 pub(crate) const XKB_MOD_NONE: usize = 0xfffffff;
 
@@ -604,6 +604,51 @@ impl Level {
     }
 }
 
+pub(super) fn wrap_group_into_range(
+    group: i32,
+    num_groups: LayoutIndex,
+    out_of_range_group_action: &RangeExceedType,
+    out_of_range_group_number: &LayoutIndex,
+) -> Option<LayoutIndex> {
+    if num_groups == 0 {
+        return None;
+    }
+
+    if let Ok(layout_idx) = group.try_into() {
+        if layout_idx < num_groups {
+            return Some(layout_idx);
+        }
+    }
+
+    use RangeExceedType::*;
+
+    match out_of_range_group_action {
+        Redirect => match out_of_range_group_number {
+            n if *n >= num_groups => None,
+            n => Some(*n),
+        },
+
+        Saturate => match group {
+            g if g < 0 => None,
+            _ => Some(num_groups - 1),
+        },
+        Wrap => {
+            let ngroups: i32 = num_groups.try_into().ok()?;
+            let wrapped_idx = match group {
+                // Wrap or default
+                // TODO: reevaluate these operations
+                // In original:
+                // "C99 says a negative dividend in a modulo operation
+                // always gives a negative result."
+                g if g < 0 => ngroups + (g % ngroups),
+                g => g % ngroups,
+            };
+
+            wrapped_idx.try_into().ok()
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Group {
     pub(crate) explicit_type: bool,
@@ -700,21 +745,26 @@ pub(crate) struct Mod {
 #[derive(Clone, Debug)]
 pub(crate) struct ModSet {
     pub(crate) mods: Vec<Mod>,
+    pub(crate) explicit_vmods: ModMask,
 }
 
 impl ModSet {
-    pub(crate) fn new_from_names(names: &[&str], ctx: &mut Context) -> Self {
+    pub(crate) fn new_from_names<T: AsRef<str>>(names: &[T], ctx: &mut Context) -> Self {
         // see update_builtin_keymap_fields
 
+        let explicit_vmods = 0;
         let mods = names
             .iter()
             .map(|name| Mod {
-                name: ctx.atom_intern(name),
+                name: ctx.atom_intern(name.as_ref()),
                 mod_type: ModType::REAL,
                 mapping: 0,
             })
             .collect();
-        Self { mods }
+        Self {
+            mods,
+            explicit_vmods,
+        }
     }
 
     pub(crate) fn mod_name_to_index(&self, name: Atom, mod_type: ModType) -> Option<ModIndex> {
@@ -723,6 +773,11 @@ impl ModSet {
             .position(|_mod| _mod.name == name && _mod.mod_type.intersects(mod_type))
     }
 }
+
+// Constants corresponding to limits from libxkbcommon (to avoid memory exhaustion or memory waste)
+pub(crate) const XKB_KEYCODE_MAX_IMPL: u32 = 0xfff;
+pub(crate) const XKB_LEVEL_MAX_IMPL: i64 = 2048;
+// TODO: add static assertions
 
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -784,7 +839,14 @@ impl<T: KeymapFormatType> KeymapBuilder<T> {
     fn new(mut context: Context, format: T, flags: CompileFlags) -> Self {
         // Predefined (AKA real, core, X11) modifiers. The order is important!
         let builtin_mods = [
-            "Shift", "Lock", "Control", "Mod1", "Mod2", "Mod3", "Mod4", "Mod5",
+            ModName::SHIFT,
+            ModName::CAPS,
+            ModName::CTRL,
+            ModName::MOD1,
+            ModName::MOD2,
+            ModName::MOD3,
+            ModName::MOD4,
+            ModName::MOD5,
         ];
 
         let mods = ModSet::new_from_names(&builtin_mods, &mut context);
@@ -1035,7 +1097,7 @@ impl Keymap {
             let key = self.xkb_key(kc.into())?;
 
             let layout: usize = layout.try_into().ok().and_then(|layout: i32| {
-                crate::state::wrap_group_into_range(
+                wrap_group_into_range(
                     layout,
                     key.groups.len(),
                     &key.out_of_range_group_action,
@@ -1077,7 +1139,7 @@ impl Keymap {
         let key = self.xkb_key(kc.into())?;
 
         let layout: usize = layout.try_into().ok().and_then(|layout: i32| {
-            crate::state::wrap_group_into_range(
+            wrap_group_into_range(
                 layout,
                 key.groups.len(),
                 &key.out_of_range_group_action,
@@ -1139,7 +1201,7 @@ impl Key {
             .try_into()
             .ok()
             .and_then(|layout: i32| {
-                crate::state::wrap_group_into_range(
+                wrap_group_into_range(
                     layout,
                     self.groups.len(),
                     &self.out_of_range_group_action,

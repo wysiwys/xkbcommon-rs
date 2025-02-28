@@ -213,11 +213,10 @@ impl Context {
         }
     }
     fn report_action_not_array(&self, action: &ActionType, field: &ActionField) -> ReportedError {
-        let code = XkbMessageCode::NoId;
         log::error!(
             "{:?}: The {:?} field in the {:?} action is not an array;
                 Action definition ignored.",
-            code,
+            XkbError::WrongFieldType,
             field,
             action,
         );
@@ -665,7 +664,7 @@ fn handle_set_ptr_dflt(
                 }
             };
 
-            let btn = button.resolve_button(ctx).ok_or_else(|| {
+            let btn: i64 = button.resolve_button(ctx).ok_or_else(|| {
                 ctx.report_mismatch(
                     XkbError::WrongFieldType.into(),
                     action_type,
@@ -699,11 +698,13 @@ fn handle_set_ptr_dflt(
                 return Err(HandleActionError::DefaultPtrBtnCannotBeZero);
             }
 
-            let btn = i8::try_from(btn).unwrap();
-            act.value = match op {
-                Negate => Some(-btn),
-                _ => Some(btn),
-            };
+            let btn = match op {
+                Negate => -btn,
+                _ => btn,
+            } as i8;
+
+            act.value = Some(btn);
+
             return Ok(());
         }
     }
@@ -739,32 +740,33 @@ fn handle_switch_screen(
                 }
             };
 
-            let val = scrn.resolve_integer(ctx).ok_or_else(|| {
+            let val: i64 = scrn.resolve_integer(ctx).ok_or_else(|| {
                 ctx.report_mismatch(
                     XkbError::WrongFieldType.into(),
                     action_type,
                     field,
-                    "integer (0..255)",
+                    "integer (-128..127)",
                 )
             })?;
 
-            // TODO: i8 or i16??
-            // Report this as a bug if necessary
-            let val: i8 = val.try_into().ok().filter(|i| *i >= 1).ok_or_else(|| {
+            let val = match op {
+                Negate => -val,
+                _ => val,
+            };
+            let val: i8 = val.try_into().ok().ok_or_else(|| {
                 log::error!(
-                    "{:?}: Screen index must be in the range 1..255;
+                    "{:?}: Screen index must be in the range {}..{};
                         Illegal screen value {:?} ignored.",
                     XkbMessageCode::NoId,
+                    i8::MIN,
+                    i8::MAX,
                     val
                 );
 
                 HandleActionError::IllegalScreenIndex(val)
             })?;
 
-            act.screen = match op {
-                Negate => Some(-val),
-                _ => Some(val),
-            };
+            act.screen = Some(val);
 
             return Ok(());
         } else if *field == ActionField::Same {
@@ -1000,10 +1002,9 @@ impl ActionsInfo {
         let def = match def {
             ExprDef::Action(def) if def.op == ExprOpType::ActionDecl => def,
             _ => {
-                let err = XkbMessageCode::NoId;
                 log::error!(
                     "{:?}: Expected an action definition, found {:?}",
-                    err,
+                    XkbError::WrongFieldType,
                     def.op_type()
                 );
 

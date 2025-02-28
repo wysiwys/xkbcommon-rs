@@ -26,6 +26,11 @@ use std::fs::*;
 
 use nix::unistd::AccessFlags;
 
+/// Placeholders for likely, unlikely
+/// See implementation in `hashbrown`
+pub(crate) use core::convert::identity as likely;
+pub(crate) use core::convert::identity as unlikely;
+
 /// If we can, check that the permission bits of the file permit the requested access.
 #[cfg(target_os = "linux")]
 pub(super) fn check_permissions(meta: &Metadata, requested_mode: AccessFlags) -> bool {

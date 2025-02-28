@@ -574,7 +574,7 @@ Keysyms: ExprKeysymList = {
 Keysym: Option<Keysym> = {
 	#[precedence(level="0")]
 	<ident: "IDENT"> => {
-		let keysym = resolve_keysym(&ident);
+		let keysym = param.resolve_keysym(&ident);
 
 		// First pass to check if we can resolve the sym
 		// to `NO_SYMBOL` or to a proper keysym.

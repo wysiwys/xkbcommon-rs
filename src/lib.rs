@@ -82,7 +82,7 @@
  */
 
 //!
-//! A port of `libxkbcommon` version `1.7.0` in safe Rust.
+//! A port of `libxkbcommon` version `1.8.0` in safe Rust.
 //!
 //! ### Use in Wayland client
 //! This crate is intended for use within a Wayland client written in Rust. It provides `Send + Sync` implementations of [Keymap] and [State].
@@ -151,6 +151,8 @@
 #![allow(clippy::absurd_extreme_comparisons)]
 #![crate_name = "xkbcommon_rs"]
 #![forbid(unsafe_code)]
+
+mod deprecated_keysyms;
 
 mod keysyms_utf;
 

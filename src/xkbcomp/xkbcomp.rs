@@ -69,20 +69,20 @@ pub(crate) struct ComponentNames {
 }
 
 impl RuleNames {
-    fn rules(&self) -> &str {
-        self.rules.as_deref().unwrap_or("")
+    pub(crate) fn rules(&self) -> &str {
+        self.rules.as_ref().map(|s| s.as_ref()).unwrap_or("")
     }
-    fn model(&self) -> &str {
-        self.model.as_deref().unwrap_or("")
+    pub(crate) fn model(&self) -> &str {
+        self.model.as_ref().map(|s| s.as_ref()).unwrap_or("")
     }
-    fn layout(&self) -> &str {
-        self.layout.as_deref().unwrap_or("")
+    pub(crate) fn layout(&self) -> &str {
+        self.layout.as_ref().map(|s| s.as_ref()).unwrap_or("")
     }
-    fn variant(&self) -> &str {
-        self.variant.as_deref().unwrap_or("")
+    pub(crate) fn variant(&self) -> &str {
+        self.variant.as_ref().map(|s| s.as_ref()).unwrap_or("")
     }
-    fn options(&self) -> &str {
-        self.options.as_deref().unwrap_or("")
+    pub(crate) fn options(&self) -> &str {
+        self.options.as_ref().map(|s| s.as_ref()).unwrap_or("")
     }
 }
 
