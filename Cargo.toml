@@ -53,7 +53,7 @@ phf = { version = "=0.11.3", features = ["macros", "unicase"] }
 phf_shared = "=0.11.3"
 
 # for parser
-logos = "0.14.0"
+logos = "0.15.0"
 lalrpop-util = { version = "0.22.1", features = ["lexer"] }
 
 # for enum counts and iterations
