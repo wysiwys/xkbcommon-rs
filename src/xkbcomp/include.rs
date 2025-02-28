@@ -113,9 +113,7 @@ impl From<char> for MergeMode {
 #[derive(Logos, Debug)]
 #[logos(error = &'static str)]
 enum IncludeStatementToken<'input> {
-    #[regex(r"[\+\|]", |lex| match lex.slice() {
-        "|" => MergeMode::Augment, _ => MergeMode::Override,
-    }, priority=1)]
+    #[regex(r"[\+\|]", |lex| MergeMode::from(lex.slice().chars().next().unwrap()), priority=1)]
     Merge(MergeMode),
 
     #[regex(r"\([^\+\|\(\)\:]+\)", |lex| &lex.slice()[1..lex.slice().len()-1], priority = 5)]
