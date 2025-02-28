@@ -94,6 +94,21 @@ impl IncludeStmtPartBuilder<'_> {
     }
 }
 
+pub(crate) const MERGE_OVERRIDE_PREFIX: char = '+';
+pub(crate) const MERGE_AUGMENT_PREFIX: char = '|';
+pub(crate) fn is_merge_mode_prefix(ch: char) -> bool {
+    ch == MERGE_OVERRIDE_PREFIX || ch == MERGE_AUGMENT_PREFIX
+}
+
+impl From<char> for MergeMode {
+    fn from(c: char) -> Self {
+        match c {
+            MERGE_AUGMENT_PREFIX => MergeMode::Augment,
+            _ => MergeMode::Override,
+        }
+    }
+}
+
 // TODO: determine whether A-Za-z0-9 is correct here
 #[derive(Logos, Debug)]
 #[logos(error = &'static str)]
