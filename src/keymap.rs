@@ -700,12 +700,14 @@ pub(crate) struct Mod {
 #[derive(Clone, Debug)]
 pub(crate) struct ModSet {
     pub(crate) mods: Vec<Mod>,
+    pub(crate) explicit_vmods: ModMask,
 }
 
 impl ModSet {
     pub(crate) fn new_from_names(names: &[&str], ctx: &mut Context) -> Self {
         // see update_builtin_keymap_fields
 
+        let explicit_vmods = 0;
         let mods = names
             .iter()
             .map(|name| Mod {
@@ -714,7 +716,10 @@ impl ModSet {
                 mapping: 0,
             })
             .collect();
-        Self { mods }
+        Self {
+            mods,
+            explicit_vmods,
+        }
     }
 
     pub(crate) fn mod_name_to_index(&self, name: Atom, mod_type: ModType) -> Option<ModIndex> {
