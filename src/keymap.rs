@@ -774,6 +774,11 @@ impl ModSet {
     }
 }
 
+// Constants corresponding to limits from libxkbcommon (to avoid memory exhaustion or memory waste)
+pub(crate) const XKB_KEYCODE_MAX_IMPL: u32 = 0xfff;
+pub(crate) const XKB_LEVEL_MAX_IMPL: i64 = 2048;
+// TODO: add static assertions
+
 #[allow(dead_code)]
 #[derive(Clone)]
 pub struct Keymap {
