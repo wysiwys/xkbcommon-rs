@@ -231,7 +231,14 @@ impl Filter {
         }
     }
 
-    fn group_action(&mut self) -> Result<&mut GroupAction, InternalStateError> {
+    fn group_action(&self) -> Result<&GroupAction, InternalStateError> {
+        match self.action {
+            Action::Group(ref action) => Ok(action),
+            _ => Err(InternalStateError::WrongActionType),
+        }
+    }
+
+    fn group_action_mut(&mut self) -> Result<&mut GroupAction, InternalStateError> {
         match self.action {
             Action::Group(ref mut action) => Ok(action),
             _ => Err(InternalStateError::WrongActionType),
@@ -503,7 +510,7 @@ impl Filter {
 
         self._priv = FilterData::Group(base_group);
 
-        let action = self.group_action()?;
+        let action = self.group_action_mut()?;
         if action.flags.intersects(ActionFlags::AbsoluteSwitch) {
             inner_state.components.base_group = action.group.unwrap_or(0);
         } else if let Some(group) = action.group {
@@ -520,7 +527,7 @@ impl Filter {
         inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
         if key.keycode.raw() != self.key {
-            self.group_action()?.flags &= !ActionFlags::LockClear;
+            self.group_action_mut()?.flags &= !ActionFlags::LockClear;
             return Ok(FilterResult::Continue);
         }
 
@@ -553,7 +560,7 @@ impl Filter {
     }
 
     fn group_lock_new(&mut self, inner_state: &mut InnerState) -> Result<(), InternalStateError> {
-        let group_action = self.group_action()?;
+        let group_action = self.group_action_mut()?;
 
         if group_action.flags.intersects(ActionFlags::AbsoluteSwitch) {
             inner_state.components.locked_group = group_action.group.unwrap_or(0);
