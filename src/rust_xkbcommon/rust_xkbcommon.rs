@@ -83,6 +83,7 @@
 pub(crate) use crate::keycode::Keycode;
 
 pub(crate) use xkeysym::Keysym;
+pub(crate) use xkeysym::RawKeysym;
 
 /// A number used to represent a physical key on a keyboard.
 ///
