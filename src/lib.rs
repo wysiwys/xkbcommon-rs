@@ -152,7 +152,6 @@
 #![crate_name = "xkbcommon_rs"]
 #![forbid(unsafe_code)]
 
-
 mod keysyms_utf;
 
 // generated in project 26
