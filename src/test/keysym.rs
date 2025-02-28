@@ -1939,7 +1939,7 @@ fn test_keysyms() {
     assert!(test_utf8(&Keysym::KP_Decimal, ".").unwrap());
     assert!(test_utf8(&Keysym::Tab, "\t").unwrap());
     assert!(test_utf8(&Keysym::KP_Tab, "\t").unwrap());
-    assert!(test_utf8(&Keysym::hyphen, "­").unwrap());
+    assert!(test_utf8(&Keysym::hyphen, "\u{AD}").unwrap());
     assert!(test_utf8(&Keysym::Linefeed, "\n").unwrap());
     assert!(test_utf8(&Keysym::Return, "\r").unwrap());
     assert!(test_utf8(&Keysym::KP_Enter, "\r").unwrap());
