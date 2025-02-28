@@ -740,32 +740,33 @@ fn handle_switch_screen(
                 }
             };
 
-            let val = scrn.resolve_integer(ctx).ok_or_else(|| {
+            let val: i64 = scrn.resolve_integer(ctx).ok_or_else(|| {
                 ctx.report_mismatch(
                     XkbError::WrongFieldType.into(),
                     action_type,
                     field,
-                    "integer (0..255)",
+                    "integer (-128..127)",
                 )
             })?;
 
-            // TODO: i8 or i16??
-            // Report this as a bug if necessary
-            let val: i8 = val.try_into().ok().filter(|i| *i >= 1).ok_or_else(|| {
+            let val = match op {
+                Negate => -val,
+                _ => val,
+            };
+            let val: i8 = val.try_into().ok().ok_or_else(|| {
                 log::error!(
-                    "{:?}: Screen index must be in the range 1..255;
+                    "{:?}: Screen index must be in the range {}..{};
                         Illegal screen value {:?} ignored.",
                     XkbMessageCode::NoId,
+                    i8::MIN,
+                    i8::MAX,
                     val
                 );
 
                 HandleActionError::IllegalScreenIndex(val)
             })?;
 
-            act.screen = match op {
-                Negate => Some(-val),
-                _ => Some(val),
-            };
+            act.screen = Some(val);
 
             return Ok(());
         } else if *field == ActionField::Same {
