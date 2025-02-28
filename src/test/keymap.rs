@@ -187,7 +187,6 @@ fn test_numeric_keysyms() {
     assert_eq!(key.modmap, MOD_3_MASK);
 }
 
-/*
 #[test]
 fn test_multiple_keysyms_per_level() {
     let context = test_get_context(TestContextFlags::empty()).unwrap();
@@ -217,4 +216,3 @@ fn test_multiple_keysyms_per_level() {
     assert_eq!(keysyms[0], Keysym::E);
     assert_eq!(keysyms[1], Keysym::F);
 }
-*/
