@@ -252,6 +252,9 @@ pub(crate) enum CompileKeycodesError {
     #[error("Exceeds include max depth: {0}")]
     ExceedsIncludeMaxDepth(u32),
 
+    #[error("Keycode too huge for libxkbcommon continuous array")]
+    KeycodeOutOfBounds,
+
     #[error("No keycodes file found for path {path}")]
     NoSuchKeycodesFile { path: PathBuf },
 
