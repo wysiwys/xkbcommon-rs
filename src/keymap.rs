@@ -704,14 +704,14 @@ pub(crate) struct ModSet {
 }
 
 impl ModSet {
-    pub(crate) fn new_from_names(names: &[&str], ctx: &mut Context) -> Self {
+    pub(crate) fn new_from_names<T: AsRef<str>>(names: &[T], ctx: &mut Context) -> Self {
         // see update_builtin_keymap_fields
 
         let explicit_vmods = 0;
         let mods = names
             .iter()
             .map(|name| Mod {
-                name: ctx.atom_intern(name),
+                name: ctx.atom_intern(name.as_ref()),
                 mod_type: ModType::REAL,
                 mapping: 0,
             })
@@ -789,7 +789,14 @@ impl<T: KeymapFormatType> KeymapBuilder<T> {
     fn new(mut context: Context, format: T, flags: CompileFlags) -> Self {
         // Predefined (AKA real, core, X11) modifiers. The order is important!
         let builtin_mods = [
-            "Shift", "Lock", "Control", "Mod1", "Mod2", "Mod3", "Mod4", "Mod5",
+            ModName::SHIFT,
+            ModName::CAPS,
+            ModName::CTRL,
+            ModName::MOD1,
+            ModName::MOD2,
+            ModName::MOD3,
+            ModName::MOD4,
+            ModName::MOD5,
         ];
 
         let mods = ModSet::new_from_names(&builtin_mods, &mut context);
