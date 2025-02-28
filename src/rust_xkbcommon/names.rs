@@ -44,44 +44,19 @@ impl ModName {
     pub const SHIFT: ModName = ModName("Shift");
     pub const CAPS: ModName = ModName("Lock");
     pub const CTRL: ModName = ModName("Control");
-    pub const MOD1: ModName = ModName("Mod1");
-    pub const MOD2: ModName = ModName("Mod2");
-    pub const MOD3: ModName = ModName("Mod3");
-    pub const MOD4: ModName = ModName("Mod4");
-    pub const MOD5: ModName = ModName("Mod5");
-    
-
-    // Usual virtual modifier mappings to real modifiers
     pub const ALT: ModName = ModName("Mod1");
-    pub const LOGO: ModName = ModName("Mod4");
     pub const NUM: ModName = ModName("Mod2");
+    pub const LOGO: ModName = ModName("Mod4");
 
     pub fn name(&self) -> &'static str {
         self.0
     }
 }
 
-pub struct VModName;
-
-impl VModName {
-    // Common virtual modifiers
-    pub const ALT: ModName = ModName("Alt");
-    pub const HYPER: ModName = ModName("Hyper");
-    pub const LEVEL3: ModName = ModName("LevelThree");
-    pub const LEVEL5: ModName = ModName("LevelFive");
-    pub const META: ModName = ModName("Meta");
-    pub const NUM: ModName = ModName("NumLock");
-    pub const SCROLL: ModName = ModName("ScrollLock");
-    pub const SUPER: ModName = ModName("Super");
-
-}
-
 impl LedName {
-    pub const NUM: LedName = LedName("Num Lock");
     pub const CAPS: LedName = LedName("Caps Lock");
+    pub const NUM: LedName = LedName("Num Lock");
     pub const SCROLL: LedName = LedName("Scroll Lock");
-    pub const COMPOSE: LedName = LedName("Compose");
-    pub const KANA: LedName = LedName("Kana");
 
     pub fn name(&self) -> &'static str {
         self.0
