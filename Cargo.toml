@@ -40,7 +40,7 @@ indexmap = "2.2.6"
 
 thiserror = "1.0.58"
 log = "0.4.21"
-bitflags = "2.4.2"
+bitflags = "2.8.0"
 
 xkeysym = "0.2.1"
 
