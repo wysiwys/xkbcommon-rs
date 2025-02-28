@@ -60,11 +60,9 @@ impl ModSet {
         stmt: VModDef,
         mut merge: MergeMode,
     ) -> Result<(), HandleVModError> {
-        let mods = self.clone();
+        let mut mods = self.clone();
 
-        if merge == MergeMode::Default {
-            merge = stmt.merge;
-        }
+        let stmt_value_is_none = stmt.value.is_none();
 
         let mut mapping = match stmt.value {
             None => 0,
@@ -86,6 +84,10 @@ impl ModSet {
             }
         };
 
+        if merge == MergeMode::Default {
+            merge = stmt.merge;
+        }
+
         for _mod in self.mods.iter_mut() {
             if _mod.name == stmt.name {
                 if _mod.mod_type != ModType::VIRT {
@@ -99,13 +101,23 @@ impl ModSet {
                         name.expect("Mod has no name").into(),
                     ));
                 }
-                if _mod.mapping == mapping {
+                if _mod.mapping == mapping || stmt_value_is_none {
+                    /*
+                     * Same definition or no new explicit mapping: do nothing.
+                     * Note that we must test the statement value and not the mapping
+                     * in order to allow resetting it: e.g. `VMod=none`.
+                     */
                     return Ok(());
                 }
-                if _mod.mapping != 0 {
-                    let (_use, ignore) = match merge {
-                        MergeMode::Override => (mapping, _mod.mapping),
-                        _ => (_mod.mapping, mapping),
+                let vmod = 0;
+                if (mods.explicit_vmods & vmod) > 0 {
+                    // Handle conflicting mappings
+                    assert_ne!(_mod.mapping, 0);
+                    let clobber = merge != MergeMode::Augment;
+                    let (_use, ignore) = if clobber {
+                        (mapping, _mod.mapping)
+                    } else {
+                        (_mod.mapping, mapping)
                     };
 
                     log::warn!("{:?}: Virtual modifier {:?} defined multiple times; Using {:?}, ignoring {:?}",
@@ -119,6 +131,11 @@ impl ModSet {
                 }
 
                 _mod.mapping = mapping;
+                if mapping > 0 {
+                    mods.explicit_vmods |= vmod;
+                } else {
+                    mods.explicit_vmods &= !vmod;
+                }
                 return Ok(());
             }
         }
@@ -138,6 +155,10 @@ impl ModSet {
             mod_type: ModType::VIRT,
             mapping,
         });
+
+        if mapping > 0 {
+            mods.explicit_vmods |= 1 << mods.mods.len();
+        }
 
         Ok(())
     }
