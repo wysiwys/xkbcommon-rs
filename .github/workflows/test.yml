@@ -1,0 +1,14 @@
+
+name: Test
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  fmt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: test
+        run: cargo test --lib --all-features
