@@ -296,7 +296,7 @@ xkb_keycodes "evdev_aliases(qwerty)" {
 };
 
 xkb_types "complete" {
-	virtual_modifiers NumLock,Alt,LevelThree,LAlt=Mod1,RAlt=0x100,RControl=0x210001,LControl,ScrollLock,LevelFive,AltGr,Meta,Super,Hyper;
+	virtual_modifiers NumLock,Alt,LevelThree,LAlt,RAlt,RControl,LControl,ScrollLock,LevelFive,AltGr,Meta,Super,Hyper;
 
 	type "ONE_LEVEL" {
 		modifiers= none;
@@ -590,7 +590,7 @@ xkb_types "complete" {
 };
 
 xkb_compatibility "complete_caps(caps_lock)_4_misc(assign_shift_left_action)_4_level5(level5_lock)_4" {
-	virtual_modifiers NumLock,Alt,LevelThree,LAlt=Mod1,RAlt=0x100,RControl=0x210001,LControl,ScrollLock,LevelFive,AltGr,Meta,Super,Hyper;
+	virtual_modifiers NumLock,Alt,LevelThree,LAlt,RAlt,RControl,LControl,ScrollLock,LevelFive,AltGr,Meta,Super,Hyper;
 
 	interpret.useModMapMods= AnyLevel;
 	interpret.repeat= False;
@@ -1727,13 +1727,6 @@ xkb_symbols "pc_us_ru_2_ca(multix)_3_de(neo)_4_inet(evdev)" {
 	key <FK12>               {
 		type= "CTRL+ALT",
 		symbols[Group1]= [             F12,             F12,             F12,             F12, XF86Switch_VT_12 ]
-	};
-	key <AB11>               {
-		repeat= No,
-		symbols[Group1]= [                      Control_L, {                      Control_L,                    Mode_switch } ],
-		actions[Group1]= [     SetMods(modifiers=Control), {     SetMods(modifiers=Control),             SetGroup(group=+1) } ],
-		symbols[Group2]= [ {                      Control_L,                    Mode_switch },                      Control_L ],
-		actions[Group2]= [ {     SetMods(modifiers=Control),             SetGroup(group=+1) },     SetMods(modifiers=Control) ]
 	};
 	key <KATA>               {	[        Katakana ] };
 	key <HIRA>               {	[        Hiragana ] };

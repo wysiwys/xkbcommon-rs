@@ -13,10 +13,6 @@
   $layout_group *       = my_symbols+%(v)
   *             *       = default_symbols
 
-! layout        = symbols
-  $layout_group = my_symbols+%(v)
-  *             = default_symbols
-
 ! model         = types
   *             = default_types
 
