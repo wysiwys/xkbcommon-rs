@@ -5,13 +5,22 @@ authors = ["wysiwys"]
 edition = "2021"
 license-file = "LICENSE"
 keywords = ["xkb", "xkbcommon", "libxkbcommon", "wayland", "keymap"]
-exclude = ["README.md", ".gitignore", "benches/", "keysym_map_gen/", "scripts/", "src/test/", "test/", "target/"]
+exclude = [
+    "README.md",
+    ".gitignore",
+    "benches/",
+    "keysym_map_gen/",
+    "scripts/",
+    "src/test/",
+    "test/",
+    "target/",
+]
 description = "a port of libxkbcommon in safe Rust"
 repository = "https://github.com/wysiwys/xkbcommon-rs"
 
 [workspace]
 members = ["codegen", "keysym_map_gen"]
- 
+
 [features]
 client = []
 server = []
@@ -19,9 +28,9 @@ server = []
 [profile.release]
 panic = 'abort'
 opt-level = 3
-lto = true # link time optimization
+lto = true        # link time optimization
 codegen-units = 1 # reduce codegen units
-strip = true # strip symbols from binary
+strip = true      # strip symbols from binary
 debug = false
 
 [dependencies]
@@ -39,9 +48,9 @@ xkeysym = "0.2.1"
 nix = { version = "0.28.0", features = ["fs"] }
 
 # for perfect ordered maps with caseless lookups
-unicase = "2.7.0"
-phf = { version = "0.11.2", features = ["macros", "unicase"] }
-phf_shared = "0.11.2"
+unicase = "2.8.1"
+phf = { version = "0.11.3", features = ["macros", "unicase"] }
+phf_shared = "0.11.3"
 
 # for parser
 logos = "0.14.0"
@@ -50,7 +59,6 @@ lalrpop-util = { version = "0.20.0", features = ["lexer"] }
 # for enum counts and iterations
 strum = "0.26.2"
 strum_macros = "0.26.2"
-
 
 
 [build-dependencies]
@@ -62,7 +70,7 @@ icu_casemap = "1.4.0"
 #gettext-rs = "0.7.0"
 evdev = "0.12.1"
 xkbcommon = "0.7.0"
-criterion = { version = "0.5.1", features=["html_reports"] }
+criterion = { version = "0.5.1", features = ["html_reports"] }
 simplelog = "0.12.2"
 
 
