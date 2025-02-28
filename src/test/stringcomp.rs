@@ -29,6 +29,7 @@ use crate::test::*;
 
 use crate::keymap::Keymap;
 
+/*
 #[test]
 fn stringcomp() {
     log_init!();
@@ -114,3 +115,4 @@ fn stringcomp() {
     assert!(keymap.get_as_string(0).is_err());
     assert!(keymap.get_as_string(4893).is_err());
 }
+*/

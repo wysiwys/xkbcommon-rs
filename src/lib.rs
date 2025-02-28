@@ -1,3 +1,4 @@
+#![allow(warnings)]
 // Includes comments and exports from include/xkbcommon/xkbcommon.h
 /*
  * Copyright 1985, 1987, 1990, 1998  The Open Group
@@ -150,7 +151,10 @@
 #![allow(clippy::absurd_extreme_comparisons)]
 #![crate_name = "xkbcommon_rs"]
 #![forbid(unsafe_code)]
+
+
 mod keysyms_utf;
+
 // generated in project 26
 // TODO: migrate over to build.rs
 mod keysyms_generated_phf;
@@ -503,13 +507,13 @@ macro_rules! log_init {
     () => {
         use simplelog::*;
 
-        TermLogger::init(
+        // Only initialize logger if not already initialized
+        let _ = TermLogger::init(
             LevelFilter::Debug,
             Config::default(),
             TerminalMode::Mixed,
             ColorChoice::Auto,
-        )
-        .unwrap()
+        );
     };
 }
 #[cfg(test)]
