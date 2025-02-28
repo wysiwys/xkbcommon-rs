@@ -604,6 +604,51 @@ impl Level {
     }
 }
 
+pub(super) fn wrap_group_into_range(
+    group: i32,
+    num_groups: LayoutIndex,
+    out_of_range_group_action: &RangeExceedType,
+    out_of_range_group_number: &LayoutIndex,
+) -> Option<LayoutIndex> {
+    if num_groups == 0 {
+        return None;
+    }
+
+    if let Ok(layout_idx) = group.try_into() {
+        if layout_idx < num_groups {
+            return Some(layout_idx);
+        }
+    }
+
+    use RangeExceedType::*;
+
+    match out_of_range_group_action {
+        Redirect => match out_of_range_group_number {
+            n if *n >= num_groups => None,
+            n => Some(*n),
+        },
+
+        Saturate => match group {
+            g if g < 0 => None,
+            _ => Some(num_groups - 1),
+        },
+        Wrap => {
+            let ngroups: i32 = num_groups.try_into().ok()?;
+            let wrapped_idx = match group {
+                // Wrap or default
+                // TODO: reevaluate these operations
+                // In original:
+                // "C99 says a negative dividend in a modulo operation
+                // always gives a negative result."
+                g if g < 0 => ngroups + (g % ngroups),
+                g => g % ngroups,
+            };
+
+            wrapped_idx.try_into().ok()
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub(crate) struct Group {
     pub(crate) explicit_type: bool,
@@ -1047,7 +1092,7 @@ impl Keymap {
             let key = self.xkb_key(kc.into())?;
 
             let layout: usize = layout.try_into().ok().and_then(|layout: i32| {
-                crate::state::wrap_group_into_range(
+                wrap_group_into_range(
                     layout,
                     key.groups.len(),
                     &key.out_of_range_group_action,
@@ -1089,7 +1134,7 @@ impl Keymap {
         let key = self.xkb_key(kc.into())?;
 
         let layout: usize = layout.try_into().ok().and_then(|layout: i32| {
-            crate::state::wrap_group_into_range(
+            wrap_group_into_range(
                 layout,
                 key.groups.len(),
                 &key.out_of_range_group_action,
@@ -1151,7 +1196,7 @@ impl Key {
             .try_into()
             .ok()
             .and_then(|layout: i32| {
-                crate::state::wrap_group_into_range(
+                wrap_group_into_range(
                     layout,
                     self.groups.len(),
                     &self.out_of_range_group_action,

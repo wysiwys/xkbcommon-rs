@@ -382,51 +382,6 @@ impl Key {
     }
 }
 
-pub(super) fn wrap_group_into_range(
-    group: i32,
-    num_groups: LayoutIndex,
-    out_of_range_group_action: &RangeExceedType,
-    out_of_range_group_number: &LayoutIndex,
-) -> Option<LayoutIndex> {
-    if num_groups == 0 {
-        return None;
-    }
-
-    if let Ok(layout_idx) = group.try_into() {
-        if layout_idx < num_groups {
-            return Some(layout_idx);
-        }
-    }
-
-    use RangeExceedType::*;
-
-    match out_of_range_group_action {
-        Redirect => match out_of_range_group_number {
-            n if *n >= num_groups => None,
-            n => Some(*n),
-        },
-
-        Saturate => match group {
-            g if g < 0 => None,
-            _ => Some(num_groups - 1),
-        },
-        Wrap => {
-            let ngroups: i32 = num_groups.try_into().ok()?;
-            let wrapped_idx = match group {
-                // Wrap or default
-                // TODO: reevaluate these operations
-                // In original:
-                // "C99 says a negative dividend in a modulo operation
-                // always gives a negative result."
-                g if g < 0 => ngroups + (g % ngroups),
-                g => g % ngroups,
-            };
-
-            wrapped_idx.try_into().ok()
-        }
-    }
-}
-
 impl State {
     /// Returns the layout to use for the given
     /// key and state, taking wrapping/clamping/
@@ -442,7 +397,7 @@ impl State {
 
 impl Key {
     fn get_layout(&self, inner_state: &InnerState) -> Option<LayoutIndex> {
-        wrap_group_into_range(
+        crate::keymap::wrap_group_into_range(
             inner_state.components.group.try_into().unwrap(),
             self.groups.len(),
             &self.out_of_range_group_action,
@@ -1040,7 +995,7 @@ impl State {
             | self.inner_state.components.locked_mods;
 
         // TODO: use groups_wrap to control instead of always RANGE_WRAP.
-        let wrapped = wrap_group_into_range(
+        let wrapped = crate::keymap::wrap_group_into_range(
             self.inner_state.components.locked_group,
             self.keymap.num_groups,
             &RangeExceedType::Wrap,
@@ -1050,7 +1005,7 @@ impl State {
 
         self.inner_state.components.locked_group = wrapped.try_into().unwrap_or(0);
 
-        let wrapped = wrap_group_into_range(
+        let wrapped = crate::keymap::wrap_group_into_range(
             self.inner_state.components.base_group
                 + self.inner_state.components.latched_group
                 + self.inner_state.components.locked_group,
