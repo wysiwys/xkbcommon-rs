@@ -9,9 +9,9 @@ description = "codegen for the `xkbcommon-rs` crate. Not meant as a standalone c
 
 
 [dependencies]
-unicase = "2.8.1"
-phf = { version = "0.11.3", features = ["macros", "unicase"] }
-phf_codegen = "0.11.3"
+unicase = "=2.8.1"
+phf = { version = "=0.11.3", features = ["macros", "unicase"] }
+phf_codegen = "=0.11.3"
 regex = "1.10.3"
 convert_case = "0.6.0"
 #lalrpop = "0.20.0"

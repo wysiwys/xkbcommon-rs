@@ -48,9 +48,9 @@ xkeysym = "0.2.1"
 nix = { version = "0.28.0", features = ["fs"] }
 
 # for perfect ordered maps with caseless lookups
-unicase = "2.8.1"
-phf = { version = "0.11.3", features = ["macros", "unicase"] }
-phf_shared = "0.11.3"
+unicase = "=2.8.1"
+phf = { version = "=0.11.3", features = ["macros", "unicase"] }
+phf_shared = "=0.11.3"
 
 # for parser
 logos = "0.14.0"
