@@ -272,6 +272,23 @@ impl Keymap {
     }
 }
 
+impl Action {
+    fn is_mod_action(&self) -> bool {
+        use ActionType::*;
+        match self.action_type() {
+            ModSet | ModLatch | ModLock => true,
+            _ => false,
+        }
+    }
+    fn is_group_action(&self) -> bool {
+        use ActionType::*;
+        match self.action_type() {
+            GroupSet | GroupLatch | GroupLock => true,
+            _ => false,
+        }
+    }
+}
+
 impl Keymap {
     pub(super) fn update_derived_keymap_fields(&mut self) {
         let keycodes: Vec<RawKeycode> = self.keys.keys().copied().collect();
