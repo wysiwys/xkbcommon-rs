@@ -213,11 +213,10 @@ impl Context {
         }
     }
     fn report_action_not_array(&self, action: &ActionType, field: &ActionField) -> ReportedError {
-        let code = XkbMessageCode::NoId;
         log::error!(
             "{:?}: The {:?} field in the {:?} action is not an array;
                 Action definition ignored.",
-            code,
+            XkbError::WrongFieldType,
             field,
             action,
         );
@@ -1000,10 +999,9 @@ impl ActionsInfo {
         let def = match def {
             ExprDef::Action(def) if def.op == ExprOpType::ActionDecl => def,
             _ => {
-                let err = XkbMessageCode::NoId;
                 log::error!(
                     "{:?}: Expected an action definition, found {:?}",
-                    err,
+                    XkbError::WrongFieldType,
                     def.op_type()
                 );
 
