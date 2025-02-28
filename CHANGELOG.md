@@ -1,8 +1,8 @@
 # Changelog
 
-# 0.1.1
+# 0.1.1 (2025-03-01)
 
-Minor version update corresponding to libxkbcommon 1.7.0.
+Patch to minor version corresponding to libxkbcommon 1.7.0.
 
 ## Fixes
 - Track `Cargo.lock` for dependency version consistency.
