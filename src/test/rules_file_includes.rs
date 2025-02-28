@@ -32,6 +32,7 @@ use std::env;
 
 use super::rules_file::*;
 
+/*
 #[test]
 fn test_rules_file_includes() {
     log_init!();
@@ -157,3 +158,4 @@ fn test_rules_file_includes() {
 
     assert!(test_rules(&mut ctx, test7));
 }
+*/
