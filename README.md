@@ -60,7 +60,7 @@ Feedback and PRs are welcome.
  ## Version table
 | `xkbcommon-rs` version | `libxkbcommon` version |
 |------------------------|------------------------|
-| 0.2.0                  | 1.8.0                  |
+| 0.2.0 (unreleased)     | 1.8.0                  |
 | 0.1.2                  | 1.7.0                  |
 | 0.1.1                  | 1.7.0                  |
 | 0.1.0                  | 1.7.0                  |
