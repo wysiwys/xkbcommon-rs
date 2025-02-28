@@ -106,8 +106,8 @@ use crate::rust_xkbcommon::*;
 ///
 //
 pub const XKB_MAX_GROUPS: u8 = 4;
-pub(crate) const XKB_MAX_MODS: usize = std::mem::size_of::<ModMask>() * 8;
-pub(crate) const XKB_MAX_LEDS: usize = std::mem::size_of::<LedMask>() * 8;
+pub(crate) const XKB_MAX_MODS: usize = std::mem::size_of::<ModMask>() * u8::BITS as usize;
+pub(crate) const XKB_MAX_LEDS: usize = std::mem::size_of::<LedMask>() * u8::BITS as usize;
 
 pub(crate) const XKB_MOD_NONE: usize = 0xfffffff;
 
