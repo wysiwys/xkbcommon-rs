@@ -68,6 +68,12 @@ mod constants {
     pub const XKB_KEYSYM_UNICODE_MIN: u32 = 0x01000100;
     pub const XKB_KEYSYM_UNICODE_MAX: u32 = 0x0110ffff;
     pub const XKB_KEYSYM_NAME_MAX_SIZE: usize = 27;
+
+    pub const XKB_KEYSYM_LONGEST_CANONICAL_NAME: &str = "ISO_Discontinuous_Underline";
+    pub const XKB_KEYSYM_LONGEST_NAME: &str = "ISO_Discontinuous_Underline";
+
+    // NOTE: without terminating null byte
+    pub const XKB_KEYSYM_UTF8_MAX_SIZE: usize = 4;
 }
 
 pub use constants::*;
