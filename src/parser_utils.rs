@@ -68,15 +68,14 @@ impl<'p> ParserParam<'p> {
     pub(crate) fn atom_intern(&mut self, ident: &str) -> Atom {
         self.ctx.atom_intern(ident)
     }
-}
-
-pub(crate) fn resolve_keysym(name: &str) -> Option<Keysym> {
-    match name.to_lowercase().as_str() {
-        "" => Some(xkeysym::NO_SYMBOL),
-        "any" => Some(xkeysym::NO_SYMBOL),
-        "nosymbol" => Some(xkeysym::NO_SYMBOL),
-        "voidsymbol" => Some(Keysym::VoidSymbol),
-        _ => keysym_from_name(name, 0),
+    pub(crate) fn resolve_keysym(&mut self, name: &str) -> Option<Keysym> {
+        match name.to_lowercase().as_str() {
+            "" => Some(xkeysym::NO_SYMBOL),
+            "any" => Some(xkeysym::NO_SYMBOL),
+            "nosymbol" => Some(xkeysym::NO_SYMBOL),
+            "voidsymbol" => Some(Keysym::VoidSymbol),
+            _ => keysym_from_name(name, 0),
+        }
     }
 }
 
