@@ -664,7 +664,7 @@ fn handle_set_ptr_dflt(
                 }
             };
 
-            let btn = button.resolve_button(ctx).ok_or_else(|| {
+            let btn: i64 = button.resolve_button(ctx).ok_or_else(|| {
                 ctx.report_mismatch(
                     XkbError::WrongFieldType.into(),
                     action_type,
@@ -698,11 +698,13 @@ fn handle_set_ptr_dflt(
                 return Err(HandleActionError::DefaultPtrBtnCannotBeZero);
             }
 
-            let btn = i8::try_from(btn).unwrap();
-            act.value = match op {
-                Negate => Some(-btn),
-                _ => Some(btn),
-            };
+            let btn = match op {
+                Negate => -btn,
+                _ => btn,
+            } as i8;
+
+            act.value = Some(btn);
+
             return Ok(());
         }
     }
