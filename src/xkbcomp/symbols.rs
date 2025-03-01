@@ -1408,44 +1408,42 @@ impl KeymapBuilder<TextV1> {
     /// Since there can be many keys which generate the keysym,
     /// the key is chosen first by lowest group in which the keysym
     /// appears, then by lowest level, then by lowest key code.
-    fn find_key_for_symbol_mut(&mut self, sym: Keysym) -> Option<&mut KeyBuilder> {
-        let found_kc = {
-            // Get mapping of (keycode, layout_idx, level_idx) -> &Level,
-            // so that it can be sorted in the correct order
-            let mut mapping = self
-                .keys
-                .iter()
-                .filter_map(|(kc, key)| key.groups.data().map(|groups| (kc, groups)))
-                .flat_map(|(kc, groups)| {
-                    groups
-                        .iter()
-                        .enumerate()
-                        .map(move |(i, group)| (kc, i, group))
-                })
-                .flat_map(|(kc, i, group)| {
-                    group
-                        .levels
-                        .iter()
-                        .enumerate()
-                        .map(move |(j, level)| (kc, i, j, level))
-                })
-                .collect::<Vec<(&RawKeycode, LayoutIndex, LevelIndex, &Level)>>();
+    fn find_key_for_symbol_mut(&mut self, target_sym: Keysym) -> Option<&mut KeyBuilder> {
+        self.get_matching_keycode(target_sym)
+            .and_then(|kc| self.keys.get_mut(&kc.raw()))
+    }
 
-            // Don't need to sort by keycode, because already in sorted order (ascending)
-            mapping.sort_by_key(|k| (k.1, k.2));
+    // helper function for find_key_for_symbol_mut()
+    fn get_matching_keycode(&self, target_sym: Keysym) -> Option<Keycode> {
+        // NOTE: keycodes are in order (B-Tree map)
+        for (kc, key) in self.keys.iter() {
+            let groups = match key.groups.data() {
+                Some(groups) => groups,
+                None => continue,
+            };
 
-            let found_kc = mapping
-                .iter()
-                .find(|(_, _, _, level)| {
-                    let syms = level.syms.iter().flatten().collect::<Vec<_>>();
-                    syms.len() == 1 && *syms[0] == sym
-                })
-                .map(|k| *k.0);
+            for group_idx in 0..groups.len() {
+                let key_num_levels = key.num_levels(group_idx, self).unwrap_or(0);
 
-            found_kc
-        };
+                if let Some(group) = groups.get(group_idx) {
+                    for level_idx in 0..key_num_levels {
+                        // iterate syms
+                        let syms = match group.levels.get(level_idx) {
+                            Some(level) => &level.syms,
+                            None => continue,
+                        };
 
-        found_kc.and_then(|kc| self.keys.get_mut(&kc))
+                        for sym in syms.iter() {
+                            if *sym == Some(target_sym) {
+                                return Some(Keycode(*kc));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        None
     }
 
     fn find_type_for_group(&mut self, keyi: &KeyInfo, group: LayoutIndex) -> (bool, usize) {
