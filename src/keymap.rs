@@ -568,7 +568,7 @@ struct Controls {
 }
 */
 
-#[derive(Clone, PartialEq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
 pub(crate) enum RangeExceedType {
     #[default]
     Wrap = 0,
