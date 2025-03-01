@@ -721,6 +721,27 @@ impl KeyBuilder {
         }
     }
 
+    pub(crate) fn num_levels<T: KeymapFormatType>(
+        &self,
+        layout: LayoutIndex,
+        keymap: &KeymapBuilder<T>,
+    ) -> Result<LevelIndex, NumLevelsError> {
+        let layout = self
+            .groups
+            .data()
+            .ok_or(NumLevelsError::KeyNoSuchGroup(layout))?
+            .get(layout)
+            .ok_or(NumLevelsError::KeyNoSuchGroup(layout))?;
+
+        // Get the corresponding type from the keymap
+        let _type = keymap
+            .types
+            .get(layout.key_type)
+            .ok_or(NumLevelsError::KeyNoSuchType)?;
+
+        Ok(_type.num_levels)
+    }
+
     pub(crate) fn build(self) -> Key {
         // TODO: reconsider these defaults
         // A builder might not even be needed
