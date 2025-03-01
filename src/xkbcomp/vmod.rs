@@ -72,7 +72,7 @@ impl ModSet {
             // modifier_map or some such.
             {
                 value
-                    .resolve_mod_mask(ctx, ModType::REAL, self)
+                    .resolve_mod_mask(ctx, ModType::REAL, &mods)
                     .ok_or_else(|| {
                         log::error!(
                             "{:?}: Declaration of {:?} ignored",
@@ -88,7 +88,7 @@ impl ModSet {
             merge = stmt.merge;
         }
 
-        for _mod in self.mods.iter_mut() {
+        for _mod in mods.mods.iter_mut() {
             if _mod.name == stmt.name {
                 if _mod.mod_type != ModType::VIRT {
                     let name = ctx.atom_text(_mod.name);
@@ -123,8 +123,8 @@ impl ModSet {
                     log::warn!("{:?}: Virtual modifier {:?} defined multiple times; Using {:?}, ignoring {:?}",
                         XkbMessageCode::NoId,
                         ctx.xkb_atom_text(stmt.name),
-                        ctx.mod_mask_text(&mods, _use),
-                        ctx.mod_mask_text(&mods, ignore)
+                        ctx.mod_mask_text(self, _use),
+                        ctx.mod_mask_text(self, ignore)
                     );
 
                     mapping = _use;
@@ -140,7 +140,7 @@ impl ModSet {
             }
         }
 
-        if self.mods.len() >= XKB_MAX_MODS {
+        if mods.mods.len() >= XKB_MAX_MODS {
             let err = XkbMessageCode::NoId;
             log::error!(
                 "{:?}:: Too many modifiers defined (maximum {})",
@@ -150,15 +150,18 @@ impl ModSet {
             return Err(HandleVModError::TooManyModifiersDefined);
         }
 
-        self.mods.push(Mod {
+        if mapping > 0 {
+            mods.explicit_vmods |= 1 << mods.mods.len();
+        }
+
+        mods.mods.push(Mod {
             name: stmt.name,
             mod_type: ModType::VIRT,
             mapping,
         });
 
-        if mapping > 0 {
-            mods.explicit_vmods |= 1 << mods.mods.len();
-        }
+        // IMPORTANT: do not remove
+        *self = mods;
 
         Ok(())
     }
