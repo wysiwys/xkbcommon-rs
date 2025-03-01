@@ -275,7 +275,7 @@ impl GroupInfo {
                 self.type_name = to_use;
             }
         }
-        self.defined |= from.defined & GroupField::TYPE;
+        self.defined.insert(from.defined & GroupField::TYPE);
 
         // Now look at the levels
 
@@ -363,7 +363,7 @@ fn use_new_key_field(
     }
 
     if new.intersects(field) {
-        *collide |= field;
+        collide.insert(field);
 
         if clobber {
             return true;
@@ -414,7 +414,7 @@ impl KeyInfo {
             &mut collide,
         ) {
             self.vmodmap = from.vmodmap;
-            self.defined |= KeyField::VMODMAP;
+            self.defined.insert(KeyField::VMODMAP);
         }
 
         if use_new_key_field(
@@ -425,7 +425,7 @@ impl KeyInfo {
             &mut collide,
         ) {
             self.repeat = from.repeat;
-            self.defined |= KeyField::REPEAT;
+            self.defined.insert(KeyField::REPEAT);
         }
         if use_new_key_field(
             KeyField::DEFAULT_TYPE,
@@ -435,7 +435,7 @@ impl KeyInfo {
             &mut collide,
         ) {
             self.default_type = from.default_type;
-            self.defined |= KeyField::DEFAULT_TYPE;
+            self.defined.insert(KeyField::DEFAULT_TYPE);
         }
         if use_new_key_field(
             KeyField::GROUPINFO,
@@ -446,7 +446,7 @@ impl KeyInfo {
         ) {
             self.out_of_range_group_action = from.out_of_range_group_action.clone();
             self.out_of_range_group_number = from.out_of_range_group_number;
-            self.defined |= KeyField::GROUPINFO;
+            self.defined.insert(KeyField::GROUPINFO);
         }
 
         if report && !collide.is_empty() {
@@ -784,7 +784,7 @@ impl KeyInfo {
             });
         }
 
-        groupi.defined |= GroupField::SYMS;
+        groupi.defined.insert(GroupField::SYMS);
 
         // TODO: check order here
         for syms_list in value.syms_lists.into_iter() {
@@ -906,14 +906,14 @@ impl KeyInfo {
 
             if array_ndx.is_none() {
                 self.default_type = Some(type_name);
-                self.defined |= KeyField::DEFAULT_TYPE;
+                self.defined.insert(KeyField::DEFAULT_TYPE);
             } else if let Some(mut ndx) = array_ndx.unwrap().resolve_group(ctx) {
                 ndx -= 1;
 
                 // insert or update
                 if let Some(ref mut groupi) = self.groups.get_mut(&ndx) {
                     groupi.type_name = Some(type_name);
-                    groupi.defined |= GroupField::TYPE;
+                    groupi.defined.insert(GroupField::TYPE);
                 } else {
                     self.groups.insert(
                         ndx,
@@ -948,7 +948,7 @@ impl KeyInfo {
                     CompileSymbolsError::ExpectedVModMask
                 })?;
 
-            self.defined |= KeyField::VMODMAP;
+            self.defined.insert(KeyField::VMODMAP);
         } else if ["locking", "lock", "locks"].contains(&field_str) {
             log::warn!(
                 "{:?}: Key behaviors not supported; Ignoring locking specification for key {:?}",
@@ -979,7 +979,7 @@ impl KeyInfo {
             })?;
 
             self.repeat = val;
-            self.defined |= KeyField::REPEAT;
+            self.defined.insert(KeyField::REPEAT);
         } else if ["groupswrap", "wrapgroups"].contains(&field_str) {
             let set = value.resolve_boolean(ctx).ok_or_else(|| {
                 log::error!(
@@ -996,7 +996,7 @@ impl KeyInfo {
                 false => RangeExceedType::Saturate,
             };
 
-            self.defined |= KeyField::GROUPINFO;
+            self.defined.insert(KeyField::GROUPINFO);
         } else if ["groupsclamp", "clampgroups"].contains(&field_str) {
             let set = value.resolve_boolean(ctx).ok_or_else(|| {
                 log::error!(
@@ -1013,7 +1013,7 @@ impl KeyInfo {
                 false => RangeExceedType::Wrap,
             };
 
-            self.defined |= KeyField::GROUPINFO;
+            self.defined.insert(KeyField::GROUPINFO);
         } else if ["groupsredirect", "redirectgroups"].contains(&field_str) {
             let grp = value.resolve_group(ctx)
                 .ok_or_else(|| {
@@ -1029,7 +1029,7 @@ impl KeyInfo {
 
             self.out_of_range_group_action = RangeExceedType::Redirect;
             self.out_of_range_group_number = grp - 1;
-            self.defined |= KeyField::GROUPINFO;
+            self.defined.insert(KeyField::GROUPINFO);
         } else {
             log::error!(
                 "{:?}: Unknown field {} in a symbol interpretation; Definition ignored",
@@ -1682,12 +1682,12 @@ impl KeyInfo {
 
         if self.defined.intersects(KeyField::VMODMAP) {
             key.vmodmap = self.vmodmap;
-            key.explicit |= ExplicitComponents::VMODMAP
+            key.explicit.insert(ExplicitComponents::VMODMAP)
         };
 
         if self.repeat != KeyRepeat::Undefined {
             key.repeats = self.repeat == KeyRepeat::Yes;
-            key.explicit |= ExplicitComponents::REPEAT
+            key.explicit.insert(ExplicitComponents::REPEAT)
         };
 
         if self
@@ -1695,7 +1695,7 @@ impl KeyInfo {
             .values()
             .any(|g| g.defined.intersects(GroupField::ACTS))
         {
-            key.explicit |= ExplicitComponents::INTERP
+            key.explicit.insert(ExplicitComponents::INTERP)
         };
 
         Ok(())
