@@ -656,6 +656,35 @@ pub(crate) struct Group {
     pub(super) levels: Vec<Level>,
 }
 
+#[derive(Default)]
+pub(crate) enum BuilderData<T: Default> {
+    #[default]
+    Uninitialized,
+    Initialized(T),
+}
+
+impl<T: Default> BuilderData<T> {
+    pub(crate) fn initialize_with(&mut self, data: T) {
+        // TODO: there may be some cases where this data shouldn't be overwritten
+
+        *self = BuilderData::Initialized(data);
+    }
+
+    fn unwrap_or_default(self) -> T {
+        match self {
+            BuilderData::Uninitialized => T::default(),
+            BuilderData::Initialized(data) => data,
+        }
+    }
+
+    pub(crate) fn data(&self) -> Option<&T> {
+        match self {
+            BuilderData::Uninitialized => None,
+            BuilderData::Initialized(data) => Some(&data),
+        }
+    }
+}
+
 pub(crate) struct KeyBuilder {
     pub(crate) keycode: Keycode,
     pub(crate) name: Atom,
@@ -667,7 +696,7 @@ pub(crate) struct KeyBuilder {
     pub(crate) out_of_range_group_action: Option<RangeExceedType>,
     pub(crate) out_of_range_group_number: Option<LayoutIndex>,
 
-    pub(crate) groups: Option<Vec<Group>>,
+    pub(crate) groups: BuilderData<Vec<Group>>,
 }
 
 impl KeyBuilder {
@@ -681,7 +710,14 @@ impl KeyBuilder {
             repeats: false,
             out_of_range_group_action: None,
             out_of_range_group_number: None,
-            groups: None,
+            groups: Default::default(),
+        }
+    }
+
+    pub(crate) fn num_groups(&self) -> usize {
+        match &self.groups {
+            BuilderData::Uninitialized => 0,
+            BuilderData::Initialized(groups) => groups.len(),
         }
     }
 
@@ -697,7 +733,7 @@ impl KeyBuilder {
             repeats: self.repeats,
             out_of_range_group_action: self.out_of_range_group_action.unwrap_or_default(),
             out_of_range_group_number: self.out_of_range_group_number.unwrap_or(0),
-            groups: self.groups.unwrap_or_else(Vec::new),
+            groups: self.groups.unwrap_or_default(),
         }
     }
 }
@@ -877,7 +913,7 @@ impl<T: KeymapFormatType> KeymapBuilder<T> {
         let num_groups = self
             .keys
             .values()
-            .map(|key| key.groups.as_ref().map(|g| g.len()).unwrap_or(0))
+            .map(|key| key.num_groups())
             .max()
             .unwrap_or(0);
 

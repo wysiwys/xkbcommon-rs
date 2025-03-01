@@ -1415,7 +1415,7 @@ impl KeymapBuilder<TextV1> {
             let mut mapping = self
                 .keys
                 .iter()
-                .filter_map(|(kc, key)| key.groups.as_ref().map(|groups| (kc, groups)))
+                .filter_map(|(kc, key)| key.groups.data().map(|groups| (kc, groups)))
                 .flat_map(|(kc, groups)| {
                     groups
                         .iter()
@@ -1655,7 +1655,7 @@ impl KeyInfo {
                 CompileSymbolsError::KeyNotFoundInKeycodes(text.clone())
             })?;
 
-        key.groups = Some(groups);
+        key.groups.initialize_with(groups);
         key.out_of_range_group_number = Some(self.out_of_range_group_number);
         key.out_of_range_group_action = Some(self.out_of_range_group_action);
 
@@ -1749,7 +1749,7 @@ impl SymbolsInfo {
                 .keys
                 .iter()
                 //.filter(|(_, k)| k.name != XKB_ATOM_NONE)
-                .filter(|(_, k)| k.groups.is_none() || k.groups.as_ref().unwrap().is_empty())
+                .filter(|(_, k)| k.num_groups() > 0)
                 .for_each(|(_, key)| {
                     log::info!(
                         "{:?}: No symbols defined for {}",
