@@ -1415,31 +1415,54 @@ impl KeymapBuilder<TextV1> {
 
     // helper function for find_key_for_symbol_mut()
     fn get_matching_keycode(&self, target_sym: Keysym) -> Option<Keycode> {
-        // NOTE: keycodes are in order (B-Tree map)
-        for (kc, key) in self.keys.iter() {
-            let groups = match key.groups.data() {
-                Some(groups) => groups,
-                None => continue,
-            };
+        let mut current_group = 0;
 
-            for group_idx in 0..groups.len() {
-                let key_num_levels = key.num_levels(group_idx, self).unwrap_or(0);
+        // group loop (run once for each group)
+        loop {
+            let mut current_level = 0;
+            let mut no_groups_found_for_this_index = true;
+            // level loop (run once for each level)
+            loop {
+                let mut no_levels_found_for_this_index = true;
+                // NOTE: keycodes are in order (B-Tree map)
+                for (kc, key) in self.keys.iter() {
+                    if current_group >= key.num_groups() {
+                        continue;
+                    }
+                    // found a valid group
+                    no_groups_found_for_this_index = false;
 
-                if let Some(group) = groups.get(group_idx) {
-                    for level_idx in 0..key_num_levels {
-                        // iterate syms
-                        let syms = match group.levels.get(level_idx) {
-                            Some(level) => &level.syms,
-                            None => continue,
-                        };
+                    let key_num_levels = key.num_levels(current_group, self).unwrap_or(0);
+                    if current_level >= key_num_levels {
+                        continue;
+                    }
 
-                        for sym in syms.iter() {
-                            if *sym == Some(target_sym) {
-                                return Some(Keycode(*kc));
-                            }
+                    // found a valid level for this group
+                    no_levels_found_for_this_index = false;
+
+                    let syms = key
+                        .groups
+                        .data()
+                        .and_then(|d| d.get(current_group))
+                        .and_then(|g| g.levels.get(current_level))
+                        .map(|l| &l.syms);
+
+                    match syms {
+                        Some(syms) if syms.contains(&Some(target_sym)) => {
+                            return Some(Keycode(*kc));
                         }
+                        _ => continue,
                     }
                 }
+                current_level += 1;
+                if no_levels_found_for_this_index {
+                    // return to group loop
+                    break;
+                }
+            }
+            current_group += 1;
+            if no_groups_found_for_this_index {
+                break;
             }
         }
 
