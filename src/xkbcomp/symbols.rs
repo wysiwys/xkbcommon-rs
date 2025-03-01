@@ -120,7 +120,7 @@ impl GroupInfo {
     fn new() -> Self {
         Self {
             defined: GroupField::empty(),
-            levels: vec![],
+            levels: Vec::new(),
             type_name: None,
         }
     }
@@ -218,15 +218,15 @@ impl SymbolsInfo {
             mods,
             explicit_group: None,
 
-            errors: vec![],
+            errors: Vec::new(),
             unrecoverable_error: None,
 
             include_depth,
             // memset 0 in original
             group_names: BTreeMap::new(),
             name: None,
-            keys: vec![],
-            modmaps: vec![],
+            keys: Vec::new(),
+            modmaps: Vec::new(),
         }
     }
 }
@@ -920,7 +920,7 @@ impl KeyInfo {
                         GroupInfo {
                             type_name: Some(type_name),
                             defined: GroupField::TYPE,
-                            levels: vec![],
+                            levels: Vec::new(),
                         },
                     );
                 }
@@ -1613,7 +1613,7 @@ impl KeyInfo {
         }
 
         // Find and assign the groups' types in the keymap.
-        let mut groups = vec![];
+        let mut groups = Vec::new();
 
         let group_indices: Vec<usize> = self.groups.keys().copied().collect();
 
