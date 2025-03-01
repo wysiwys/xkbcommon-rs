@@ -88,10 +88,10 @@ impl ModSet {
             merge = stmt.merge;
         }
 
-        for _mod in mods.mods.iter_mut() {
-            if _mod.name == stmt.name {
-                if _mod.mod_type != ModType::VIRT {
-                    let name = ctx.atom_text(_mod.name);
+        for current_mod in mods.mods.iter_mut() {
+            if current_mod.name == stmt.name {
+                if current_mod.mod_type != ModType::VIRT {
+                    let name = ctx.atom_text(current_mod.name);
                     log::error!("{:?}: Can't add a virtual modifier named \"{:?}\"; there is already a non-virtual modifier with this name! Ignored",
                         XkbMessageCode::NoId,
                         name
@@ -101,7 +101,7 @@ impl ModSet {
                         name.expect("Mod has no name").into(),
                     ));
                 }
-                if _mod.mapping == mapping || stmt_value_is_none {
+                if current_mod.mapping == mapping || stmt_value_is_none {
                     /*
                      * Same definition or no new explicit mapping: do nothing.
                      * Note that we must test the statement value and not the mapping
@@ -112,12 +112,12 @@ impl ModSet {
                 let vmod = 0;
                 if (mods.explicit_vmods & vmod) > 0 {
                     // Handle conflicting mappings
-                    assert_ne!(_mod.mapping, 0);
+                    assert_ne!(current_mod.mapping, 0);
                     let clobber = merge != MergeMode::Augment;
                     let (_use, ignore) = if clobber {
-                        (mapping, _mod.mapping)
+                        (mapping, current_mod.mapping)
                     } else {
-                        (_mod.mapping, mapping)
+                        (current_mod.mapping, mapping)
                     };
 
                     log::warn!("{:?}: Virtual modifier {:?} defined multiple times; Using {:?}, ignoring {:?}",
@@ -130,7 +130,7 @@ impl ModSet {
                     mapping = _use;
                 }
 
-                _mod.mapping = mapping;
+                current_mod.mapping = mapping;
                 if mapping > 0 {
                     mods.explicit_vmods |= vmod;
                 } else {
