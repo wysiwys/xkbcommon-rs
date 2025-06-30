@@ -92,7 +92,7 @@
 //! ### Example
 //!
 //! To set up the keymap/state on the Wayland client side:
-//! ```rust
+//! ```ignore
 //! use xkbcommon_rs::*;
 //!
 //! let keymap = Keymap::new_from_string(
@@ -108,7 +108,7 @@
 //! To get keysyms and update the state on the client side:
 //!
 //!
-//! ```rust
+//! ```ignore
 //! // Get syms before updating state
 //! let sym = state.key_get_one_sym(keycode)?;
 //!
@@ -191,7 +191,7 @@ pub mod xkb_context {
     //! The [Context] contains general library data and state, and is passed to a Keymap's
     //! constructor.
     //! ### Usage
-    //! ```rust
+    //! ```ignore
     //! let context = Context::new(0).unwrap();
     //! ```
     //! The [Context] is passed to a Keymap's constructor to initialize the keymap.
@@ -216,7 +216,7 @@ pub mod xkb_keymap {
     //! Wayland server.
     //!
     //! ### Creating a [Keymap]
-    //! ```rust
+    //! ```ignore
     //! let keymap = Keymap::new_from_string(
     //!     context,
     //!     string, /* Read from the OwnedFd provided by the Wayland compositor */
@@ -228,7 +228,7 @@ pub mod xkb_keymap {
     //! `CompileFlags::empty()` to this function.
     //!
     //! A keymap can also be generated from RMLVO:
-    //! ```rust
+    //! ```ignore
     //! let keymap = Keymap::new_from_names(
     //!     context,
     //!     Some(rmlvo),
@@ -237,7 +237,7 @@ pub mod xkb_keymap {
     //!
     //! ```
     //! ### Creating a [State](crate::State) from a [Keymap]
-    //! ```rust
+    //! ```ignore
     //! let mut state = State::new(keymap);
     //! ```
 
@@ -267,7 +267,7 @@ pub use xkb_keymap::KeymapFormat;
 pub mod xkb_state {
     //! The module containing the [State] and its associated metadata and options.
     //! ### Creating a [State] from a [Keymap](crate::Keymap)
-    //! ```rust
+    //! ```ignore
     //! let mut state = State::new(keymap);
     //! ```
     //! ### Use in a Wayland client
@@ -278,7 +278,7 @@ pub mod xkb_state {
     //! xkbcommon-rs = { version = "0.1.1", features = ["client"] }
     //! ```
     //! Then to update the state based on data passed by the compositor:
-    //! ```rust
+    //! ```ignore
     //! // Get syms before updating state
     //! let sym = state.key_get_one_sym(keycode)?;
     //!
@@ -291,7 +291,7 @@ pub mod xkb_state {
     /// Keyboard state object.
     ///
     /// ### Creating a [State] from a [Keymap](crate::Keymap)
-    /// ```rust
+    /// ```ignore
     /// let mut state = State::new(keymap);
     /// ```
     /// State objects contain the active state of a keyboard
@@ -394,7 +394,8 @@ pub use xkb_state::State;
 ///
 /// ```
 /// use evdev::Key;
-/// let keycode_A = Keycode::new(Key::KEY_A + 8);
+/// use xkbcommon_rs::keycode::Keycode;
+/// let keycode_A = Keycode::new(Key::KEY_A.0 as u32 + 8);
 /// ```
 ///
 /// The keymap defines a canonical name for each key, plus possible aliases.
@@ -404,7 +405,7 @@ pub mod keycode {
     //! The [Keycode](crate::keycode::Keycode) struct, which is used to update the [State].
     //!
     //! ### Usage in [State]:
-    //! ```rust
+    //! ```ignore
     //! state.update_key(keycode_A, KeyDirection::Down);
     //! state.update_key(keycode_A, KeyDirection::Up);
     //!

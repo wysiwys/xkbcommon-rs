@@ -36,6 +36,7 @@ use std::env;
 
 use evdev::Key;
 
+#[cfg(feature = "server")]
 fn test_rmlvo_va(
     ctx: Context,
     rules: Option<&str>,
@@ -64,6 +65,7 @@ fn test_rmlvo_va(
     test_key_seq(&keymap, args)
 }
 
+#[cfg(feature = "server")]
 fn test_rmlvo(
     ctx: Context,
     rules: &str,
@@ -86,6 +88,7 @@ fn test_rmlvo(
     Ok(())
 }
 
+#[cfg(feature = "server")]
 fn test_rmlvo_env(
     ctx: Context,
     rules: &str,
@@ -124,6 +127,7 @@ fn test_rmlvo_env(
 }
 
 #[test]
+#[cfg(feature = "server")]
 fn rmlvo() {
     use KeySeqState::*;
 

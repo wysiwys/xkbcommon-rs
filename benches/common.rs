@@ -54,15 +54,18 @@
  *
  */
 
-use rust_xkbcommon::{
+use xkbcommon_rs::{
     error::{context::*, keymap::*},
     keycode::*,
-    keysym::*,
     xkb_context::*,
-    xkb_keymap::*,
-    xkb_state::*,
 };
 
+#[cfg(feature = "server")]
+use xkbcommon_rs::{keysym::*, xkb_state::*};
+
+use xkeysym::Keysym;
+
+#[cfg(feature = "server")]
 use std::path::PathBuf;
 
 #[cfg(test)]
@@ -74,9 +77,11 @@ pub enum TestErr {
     WrongKeysym { expected: Keysym, got: Keysym },
 }
 
+#[cfg(feature = "server")]
 const EVDEV_OFFSET: u32 = 8;
 
 #[derive(Debug, PartialEq)]
+#[cfg(feature = "server")]
 pub(crate) enum KeySeqState {
     Down,
     Repeat,
@@ -95,6 +100,7 @@ bitflags::bitflags! {
 
 }
 
+#[cfg(feature = "server")]
 pub(crate) fn test_key_seq(
     keymap: &Keymap,
     interactions: Vec<(evdev::Key, KeySeqState, Keysym)>,
@@ -156,6 +162,7 @@ pub(crate) fn test_key_seq(
     Ok(())
 }
 
+#[cfg(feature = "server")]
 fn test_makedir(parent: &str, path: &str) -> String {
     let dirname = format!("{}/{}", parent, path);
 
@@ -164,6 +171,7 @@ fn test_makedir(parent: &str, path: &str) -> String {
     dirname
 }
 
+#[cfg(feature = "server")]
 pub(crate) fn test_maketempdir(template: &str) -> PathBuf {
     // TODO: add Win32 case?
 
@@ -187,16 +195,17 @@ fn test_get_path(path_rel: &str) -> String {
     let path = format!(
         "{}/test/data{}{}",
         srcdir,
-        match path_rel.len() > 0 {
+        match !path_rel.is_empty() {
             true => "/",
             false => "",
         },
         path_rel
     );
 
-    return path;
+    path
 }
 
+#[cfg(feature = "server")]
 pub(crate) fn test_read_file(path_rel: &str) -> Option<String> {
     let path = test_get_path(path_rel);
 
@@ -234,6 +243,7 @@ pub(crate) fn test_get_context(
     Ok(ctx)
 }
 
+#[cfg(feature = "server")]
 pub(crate) fn test_compile_file(context: Context, path: &str) -> Result<Keymap, TestErr> {
     let path = test_get_path(path);
 
@@ -249,14 +259,16 @@ pub(crate) fn test_compile_file(context: Context, path: &str) -> Result<Keymap, 
     match keymap {
         Err(e) => {
             eprintln!("{:?}: Failed to compile path: {}", e, &path);
-            return Err(TestErr::Keymap(e));
+            Err(TestErr::Keymap(e))
         }
         Ok(keymap) => {
             eprintln!("Successfully compiled path: {}", &path);
-            return Ok(keymap);
+            Ok(keymap)
         }
     }
 }
+
+#[cfg(feature = "server")]
 pub(crate) fn test_compile_string(context: Context, string: String) -> Option<Keymap> {
     // TODO: don't pass in context this way
 
@@ -270,6 +282,7 @@ pub(crate) fn test_compile_string(context: Context, string: String) -> Option<Ke
     keymap.ok()
 }
 
+#[cfg(feature = "server")]
 pub(crate) fn test_compile_rules(
     context: Context,
     rules: Option<&str>,
@@ -286,7 +299,7 @@ pub(crate) fn test_compile_rules(
         options: options.map(str::to_string),
     };
 
-    let keymap;
+    let keymap=
     // TODO: check for "" ?
     if rules.is_none()
         && model.is_none()
@@ -294,10 +307,10 @@ pub(crate) fn test_compile_rules(
         && variant.is_none()
         && options.is_none()
     {
-        keymap = Keymap::new_from_names(context, None, 0u32);
+        Keymap::new_from_names(context, None, 0u32)
     } else {
-        keymap = Keymap::new_from_names(context, Some(rmlvo), 0);
-    }
+        Keymap::new_from_names(context, Some(rmlvo), 0)
+    };
 
     if keymap.is_err() {
         eprintln!(
