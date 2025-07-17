@@ -87,6 +87,7 @@ bitflags::bitflags! {
 
 }
 
+#[cfg(feature = "server")]
 pub(crate) fn test_key_seq(
     keymap: &Keymap,
     interactions: Vec<(evdev::Key, KeySeqState, Keysym)>,

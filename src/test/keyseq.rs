@@ -31,6 +31,7 @@ use crate::keysyms::*;
 use evdev::Key;
 
 #[test]
+#[cfg(feature = "server")]
 fn keyseq() {
     log_init!();
 

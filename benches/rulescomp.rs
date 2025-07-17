@@ -29,8 +29,8 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 mod common;
 use common::*;
 
-use rust_xkbcommon::xkb_keymap::RuleNames;
-use rust_xkbcommon::*;
+use xkbcommon_rs::xkb_keymap::RuleNames;
+use xkbcommon_rs::*;
 
 fn rulescomp_c(
     rules: &str,

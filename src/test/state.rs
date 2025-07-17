@@ -39,6 +39,7 @@ impl State {
     }
 }
 #[test]
+#[cfg(feature = "server")]
 fn test_state_update_key() {
     let keymap = get_keymap_1();
 
@@ -235,6 +236,7 @@ fn test_state_update_key() {
 }
 
 #[test]
+#[cfg(all(feature = "server", feature = "client"))]
 fn test_state_serialization() {
     let keymap = get_keymap_1();
 
@@ -296,6 +298,7 @@ fn test_state_serialization() {
 }
 
 #[test]
+#[cfg(all(feature = "server", feature = "client"))]
 fn test_state_update_mask_mods() {
     let keymap = get_keymap_1();
 
@@ -405,6 +408,7 @@ fn test_state_repeat() {
 }
 
 #[test]
+#[cfg(feature = "server")]
 fn test_state_consume() {
     let keymap = get_keymap_1();
 
@@ -549,6 +553,7 @@ fn test_state_range() {
 }
 
 #[test]
+#[cfg(feature = "server")]
 fn test_state_caps_keysym_transformation() {
     let keymap = get_keymap_2();
 
@@ -724,6 +729,7 @@ fn test_key_invalid(state: &State, keycode: u32) {
     assert!(got_utf32.is_none());
 }
 #[test]
+#[cfg(feature = "server")]
 fn test_state_get_utf8_utf32() {
     let keymap = get_keymap_1();
     let mut state = State::new(keymap.clone());
@@ -777,6 +783,7 @@ fn test_state_get_utf8_utf32() {
 }
 
 #[test]
+#[cfg(feature = "server")]
 fn test_state_ctrl_string_transformation() {
     let keymap = get_keymap_1();
     let mut state = State::new(keymap.clone());
