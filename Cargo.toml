@@ -62,7 +62,7 @@ strum_macros = "0.26.2"
 
 
 [build-dependencies]
-lalrpop = "0.22.1"
+lalrpop = "0.23.0"
 xkbcommon-rs-codegen = { path = "codegen", version = "0.1.1" }
 
 [dev-dependencies]
