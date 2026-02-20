@@ -38,7 +38,7 @@ debug = false
 # For atom table
 indexmap = "2.13.0"
 
-thiserror = "1.0.58"
+thiserror = "2.0.18"
 log = "0.4.21"
 bitflags = "2.8.0"
 
