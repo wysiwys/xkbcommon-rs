@@ -54,7 +54,7 @@ phf_shared = "=0.11.3"
 
 # for parser
 logos = "0.15.0"
-lalrpop-util = { version = "0.22.1", features = ["lexer"] }
+lalrpop-util = "0.23.0"
 
 # for enum counts and iterations
 strum = "0.27.2"
