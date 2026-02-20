@@ -39,7 +39,7 @@ debug = false
 indexmap = "2.13.0"
 
 thiserror = "2.0.18"
-log = "0.4.21"
+log = "0.4.29"
 bitflags = "2.8.0"
 
 xkeysym = "0.2.1"
