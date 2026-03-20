@@ -1,0 +1,33 @@
+[package]
+name = "xkbcommon-rs-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+xkbcommon-rs = { workspace = true, features = ["client", "server"] }
+
+[[bin]]
+name = "fuzz-keysym-from-name"
+path = "fuzz_targets/keysym_from_name.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz-keymap-new-from-string"
+path = "fuzz_targets/keymap_new_from_string.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz-keymap-state"
+path = "fuzz_targets/keymap_state.rs"
+test = false
+doc = false
+bench = false

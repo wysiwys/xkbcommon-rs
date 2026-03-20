@@ -191,8 +191,8 @@ impl Filter {
     fn apply_filter(
         &mut self,
         key: &Key,
-        layout: LayoutIndex,
-        level: LevelIndex,
+        layout: Option<LayoutIndex>,
+        level: Option<LevelIndex>,
         direction: KeyDirection,
         inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
@@ -414,7 +414,14 @@ impl Key {
 }
 
 impl Key {
-    fn get_action(&self, layout: LayoutIndex, level: LevelIndex) -> Option<&Action> {
+    fn get_action(
+        &self,
+        layout: Option<LayoutIndex>,
+        level: Option<LevelIndex>,
+    ) -> Option<&Action> {
+        let layout = layout?;
+        let level = level?;
+
         let action = &self.groups.get(layout)?.levels.get(level)?.action;
 
         // TODO: return None if ActionType::None?
@@ -724,19 +731,13 @@ impl Filter {
     fn mod_latch_func(
         &mut self,
         key: &Key,
-        layout: LayoutIndex,
-        level: LevelIndex,
+        layout: Option<LayoutIndex>,
+        level: Option<LevelIndex>,
         direction: KeyDirection,
         inner_state: &mut InnerState,
     ) -> Result<FilterResult, InternalStateError> {
         // TODO: how to handle Some(Action::None) here?
-        let action = key
-            .groups
-            .get(layout)
-            .expect("Invalid layout")
-            .levels
-            .get(level)
-            .map(|l| &l.action);
+        let action = key.get_action(layout, level);
 
         use FilterResult::*;
         let mut latch: LatchState = match &self._priv {
@@ -848,12 +849,8 @@ impl Filters {
         // First run through all the currently active filters
         // and see if any of them have consumed this event.
 
-        let layout = key
-            .get_layout(inner_state)
-            .expect("Key has no valid layout");
-        let level = key
-            .get_level(layout, keymap, inner_state)
-            .expect("Key has no valid level");
+        let layout = key.get_layout(inner_state);
+        let level = layout.and_then(|layout| key.get_level(layout, keymap, inner_state));
 
         // apply all the filters and see if any were consumed
         let consumed = self

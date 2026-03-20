@@ -35,9 +35,14 @@ pub(crate) fn check_supported_char_encoding(s: &str) -> Result<&str, ()> {
 
     // early detection of wrong file encoding, e.g. UTF-16 or UTF-32
 
+    // XXX: if retrieving the characters fails, return an error
     let mut c = s.chars();
-    let first_char = c.next().unwrap();
-    let second_char = c.next().unwrap();
+    let Some(first_char) = c.next() else {
+        return Err(());
+    };
+    let Some(second_char) = c.next() else {
+        return Err(());
+    };
 
     // TODO: is this necessary?
     if first_char == '\0' || second_char == '\0' {

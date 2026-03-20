@@ -19,13 +19,14 @@ description = "a port of libxkbcommon in safe Rust"
 repository = "https://github.com/wysiwys/xkbcommon-rs"
 
 [workspace]
-members = ["codegen", "keysym_map_gen"]
+members = ["codegen", "keysym_map_gen", "fuzz"]
 
 [features]
 client = []
 server = []
 
-[profile.release]
+[profile.check-binary-size]
+inherits = 'release'
 panic = 'abort'
 opt-level = 3
 lto = true        # link time optimization
@@ -59,6 +60,9 @@ lalrpop-util = "0.23.0"
 # for enum counts and iterations
 strum = "0.27.2"
 strum_macros = "0.27.2"
+
+[workspace.dependencies]
+xkbcommon-rs = { path = "." }
 
 
 [build-dependencies]

@@ -103,8 +103,8 @@ impl<'input> Iterator for Lexer<'input> {
 #[allow(dead_code)]
 #[derive(Logos, Debug, PartialEq)]
 enum RawToken<'input> {
-    #[regex("\"[^\"]*\"", priority = 5)]
-    String(&'input str),
+    #[regex("\"[^\"]*\"", |lex| process_string(lex.slice()), priority = 5)]
+    String(String),
 
     #[regex(r"[[//]#][^\n]*[\n\r]?", |_| logos::Skip, priority=5)]
     Comment,
@@ -252,8 +252,7 @@ impl<'token> From<RawToken<'token>> for Token {
         match raw_token {
             RawToken::Comment => Token::Skip,
             RawToken::Whitespace => Token::Skip,
-            // remove brackets and process escape codes
-            RawToken::String(s) => Token::String(process_string(s[1..s.len() - 1].as_bytes())),
+            RawToken::String(s) => Token::String(s),
             RawToken::Ident(s) => Token::keyword_match(s),
             RawToken::UInt(s) => Token::UInt(s),
             RawToken::Float(f) => Token::Float(f),
@@ -285,8 +284,8 @@ fn hex_convert(token: &str) -> Option<u32> {
 }
 
 // based on string processing part of _xkbcommon_lex
-// assumes outer quotes have been removed
-fn process_string(bytes: &[u8]) -> String {
+fn process_string(bytes: &str) -> Option<String> {
+    let bytes = bytes[1..bytes.len() - 1].as_bytes();
     let len = bytes.len();
     let mut new: Vec<u8> = Vec::with_capacity(len);
     let mut i = 0;
@@ -345,7 +344,7 @@ fn process_string(bytes: &[u8]) -> String {
         }
     }
 
-    String::from_utf8(new).expect("escaped string is not valid utf8")
+    String::from_utf8(new).ok()
 }
 
 impl Token {
@@ -360,7 +359,7 @@ impl Token {
 mod test {
 
     fn test_process_string(s: &str) -> String {
-        process_string(&s[1..s.len() - 1].as_bytes())
+        process_string(s).unwrap()
     }
     use super::*;
     #[test]
